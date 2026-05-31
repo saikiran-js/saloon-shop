@@ -30,6 +30,8 @@ const I = {
   cust:     "M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z",
   serv:     "M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z",
   appt:     "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z",
+  bill:     "M6 2h12v20l-3-2-3 2-3-2-3 2V2zM9 7h6M9 11h6M9 15h4",
+  print:    "M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z",
   add:      "M12 5v14M5 12h14",
   edit:     "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z",
   del:      "M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6",
@@ -72,6 +74,13 @@ const CSS = `
   .fade-up { animation: fadeUp .35s ease both; }
   @keyframes shimmer { 0%,100% { opacity:.6; } 50% { opacity:1; } }
   .shimmer { animation: shimmer 2s ease infinite; }
+  .print-only { display: none; }
+  @media print {
+    body * { visibility: hidden !important; }
+    .print-only, .print-only * { visibility: visible !important; }
+    .print-only { display: block !important; position: absolute; left: 0; top: 0; width: 80mm; min-height: 100vh; padding: 8mm; background: white; color: #000; font-family: Arial, sans-serif; }
+    @page { size: 80mm auto; margin: 0; }
+  }
 `;
 
 // ─────────────────────────────────────────────────────────────
@@ -1464,6 +1473,263 @@ function Appointments({ appointments, reload, employees, customers, services, is
 // ─────────────────────────────────────────────────────────────
 // APP ROOT
 // ─────────────────────────────────────────────────────────────
+function Billing({ bills, reload, employees, customers, services, isAdmin }) {
+  const [modal, setModal]         = useState(null);
+  const [viewBill, setViewBill]   = useState(null);
+  const [confirmId, setConfirmId] = useState(null);
+  const [dateFilter, setDateFilter] = useState(today());
+  const [search, setSearch]       = useState("");
+  const [saving, setSaving]       = useState(false);
+  const [deleting, setDeleting]   = useState(false);
+  const [apiErr, setApiErr]       = useState("");
+
+  const blankForm = { customer_id: "", employee_id: "", service_id: "", bill_date: today(), bill_time: "10:00", payment_mode: "Cash", notes: "" };
+  const [form, setForm] = useState(blankForm);
+
+  const money = (n) => `Rs. ${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const getName = (list, id, fallback = "-") => list.find(x => x.id === id)?.name || fallback;
+  const selectedService = services.find(s => s.id === form.service_id);
+  const subtotal = Number(selectedService?.price || 0);
+  const gstAmount = +(subtotal * 0.05).toFixed(2);
+  const total = +(subtotal + gstAmount).toFixed(2);
+
+  const openAdd = () => { setForm({ ...blankForm, bill_date: dateFilter || today() }); setApiErr(""); setModal("add"); };
+  const billNo = (b) => String(b.invoice_no || "").padStart(5, "0");
+
+  const save = async () => {
+    if (!form.customer_id || !form.employee_id || !form.service_id || !form.bill_date) return;
+    const customer = customers.find(c => c.id === form.customer_id);
+    const employee = employees.find(e => e.id === form.employee_id);
+    const service = services.find(s => s.id === form.service_id);
+    if (!customer || !employee || !service) return;
+
+    setSaving(true); setApiErr("");
+    const base = Number(service.price || 0);
+    const gst = +(base * 0.05).toFixed(2);
+    const payload = {
+      customer_id: customer.id,
+      employee_id: employee.id,
+      service_id: service.id,
+      customer_name: customer.name,
+      employee_name: employee.name,
+      service_name: service.name,
+      service_price: base,
+      subtotal: base,
+      gst_rate: 5,
+      gst_amount: gst,
+      total_amount: +(base + gst).toFixed(2),
+      bill_date: form.bill_date,
+      bill_time: form.bill_time,
+      payment_mode: form.payment_mode,
+      notes: form.notes,
+    };
+    const { error: err } = await supabase.from("bills").insert([payload]);
+    setSaving(false);
+    if (err) { setApiErr(err.message); return; }
+    await reload();
+    setModal(null);
+  };
+
+  const del = async (id) => {
+    setDeleting(true);
+    const { error: err } = await supabase.from("bills").delete().eq("id", id);
+    setDeleting(false);
+    if (err) { alert(err.message); return; }
+    await reload();
+    setConfirmId(null);
+  };
+
+  const printBill = (bill) => {
+    setViewBill(bill);
+    setTimeout(() => window.print(), 80);
+  };
+
+  const filtered = bills
+    .filter(b => !dateFilter || b.bill_date === dateFilter)
+    .filter(b => {
+      const q = search.toLowerCase();
+      return [b.customer_name, b.employee_name, b.service_name, billNo(b)].some(v => String(v || "").toLowerCase().includes(q));
+    })
+    .sort((a, b) => `${a.bill_date}${a.bill_time}` < `${b.bill_date}${b.bill_time}` ? 1 : -1);
+
+  const Invoice = ({ bill, printMode = false }) => {
+    if (!bill) return null;
+    const customer = bill.customer_name || getName(customers, bill.customer_id);
+    const employee = bill.employee_name || getName(employees, bill.employee_id);
+    const service = bill.service_name || getName(services, bill.service_id);
+    const base = Number(bill.subtotal ?? bill.service_price ?? 0);
+    const gst = Number(bill.gst_amount ?? base * 0.05);
+    const grandTotal = Number(bill.total_amount ?? base + gst);
+    const text = printMode ? "#000" : "var(--text)";
+    const muted = printMode ? "#333" : "var(--muted)";
+    const line = printMode ? "#111" : "var(--border)";
+    return (
+      <div style={{ color: text, background: printMode ? "#fff" : "var(--card)", width: "100%", maxWidth: printMode ? "none" : 420, margin: "0 auto", fontSize: printMode ? 10 : ".82rem", lineHeight: 1.35 }}>
+        <div style={{ textAlign: "center", borderBottom: `1px solid ${line}`, paddingBottom: 10, marginBottom: 10 }}>
+          <div style={{ fontFamily: printMode ? "Arial,sans-serif" : "'Playfair Display',serif", fontSize: printMode ? 28 : "1.8rem", fontWeight: 800, color: printMode ? "#8b45a0" : "var(--accent)" }}>naturals</div>
+          <div style={{ fontWeight: 800, fontSize: printMode ? 11 : ".75rem" }}>Tax Invoice</div>
+          <div style={{ fontWeight: 800, marginTop: 3 }}>M/S SRI LALITHA BEAUTY ENCLAVE</div>
+          <div style={{ color: muted, fontSize: printMode ? 9 : ".72rem", marginTop: 4 }}>1ST FLOOR, SHOP NO.25, D.NO:22-38, SRI DEVI FUNCTION HALL, BESIDE ANAND RAO COMPLEX, MAIN ROAD, NANDHRA PRADESH 532421</div>
+          <div style={{ fontWeight: 700, marginTop: 5 }}>GST No: 37DLGPK2785A1Z4</div>
+        </div>
+
+        <div style={{ borderBottom: `1px solid ${line}`, paddingBottom: 8, marginBottom: 8 }}>
+          <div><b>Customer Name</b> : {customer}</div>
+          <div><b>Client Phone</b> : {customers.find(c => c.id === bill.customer_id)?.phone || "-"}</div>
+          <div><b>Bill Date</b> : {bill.bill_date} {String(bill.bill_time || "").slice(0, 5)}</div>
+          <div><b>Invoice No.</b> : {billNo(bill)}</div>
+          <div><b>Served By</b> : {employee}</div>
+        </div>
+
+        <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 8 }}>
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${line}` }}>
+              {["Particulars", "Qty", "Rate", "Amount"].map(h => <th key={h} style={{ textAlign: h === "Particulars" ? "left" : "right", padding: "4px 0", fontSize: printMode ? 9 : ".72rem", textTransform: "uppercase" }}>{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style={{ padding: "5px 0", fontWeight: 700 }}>{service}</td>
+              <td style={{ padding: "5px 0", textAlign: "right" }}>1</td>
+              <td style={{ padding: "5px 0", textAlign: "right" }}>{money(bill.service_price ?? base)}</td>
+              <td style={{ padding: "5px 0", textAlign: "right" }}>{money(base)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style={{ borderTop: `1px solid ${line}`, paddingTop: 8 }}>
+          {[
+            ["Basic Sales", base],
+            ["GST Amount (5%)", gst],
+            ["Round Off", 0],
+            ["Bill Amount", grandTotal],
+          ].map(([label, value]) => (
+            <div key={label} style={{ display: "flex", justifyContent: "space-between", fontWeight: label === "Bill Amount" ? 800 : 600, marginBottom: 4, fontSize: label === "Bill Amount" && !printMode ? ".95rem" : undefined }}>
+              <span>{label}</span><span>{money(value)}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 12, borderTop: `1px solid ${line}`, paddingTop: 8, fontSize: printMode ? 9 : ".72rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><b>Payment Mode</b><span>{bill.payment_mode || "Cash"}</span></div>
+          <div style={{ marginTop: 8, fontWeight: 800 }}>GST Tax Summary:</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", textAlign: "right", gap: 4, marginTop: 4 }}>
+            <b style={{ textAlign: "left" }}>GST</b><b>CGST</b><b>SGST</b><b>Total</b>
+            <span style={{ textAlign: "left" }}>5%</span><span>{money(gst / 2)}</span><span>{money(gst / 2)}</span><span>{money(gst)}</span>
+          </div>
+        </div>
+
+        <div style={{ textAlign: "center", marginTop: 18, borderTop: `1px solid ${line}`, paddingTop: 8, fontWeight: 800, fontSize: printMode ? 9 : ".7rem" }}>
+          THANK YOU. HAVE A NICE DAY.<br />THIS IS COMPUTERIZED INVOICE, HENCE NO SIGNATURE REQUIRED.
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: 12 }}>
+        <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.6rem", margin: 0, color: "var(--text)" }}>Billing</h2>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} style={{ ...IS, width: 165 }} />
+          <input placeholder="Search bill / customer..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...IS, width: 220 }} />
+          <Btn onClick={openAdd}><Icon d={I.add} size={15} /> New Bill</Btn>
+        </div>
+      </div>
+
+      <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
+          <thead>
+            <tr style={{ background: "var(--bg)" }}>
+              {["Bill No", "Customer", "Service", "Staff", "Date", "GST", "Total", ""].map(h => (
+                <th key={h} style={{ textAlign: "left", padding: "11px 14px", color: "var(--muted)", fontWeight: 600, fontSize: ".75rem", textTransform: "uppercase", letterSpacing: ".05em", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 && <tr><td colSpan={8} style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>No bills found.</td></tr>}
+            {filtered.map(b => (
+              <tr key={b.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                <td style={{ padding: "12px 14px", fontWeight: 800, color: "var(--text)" }}>#{billNo(b)}</td>
+                <td style={{ padding: "12px 14px", color: "var(--text)" }}>{b.customer_name || getName(customers, b.customer_id)}</td>
+                <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{b.service_name || getName(services, b.service_id)}</td>
+                <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{b.employee_name || getName(employees, b.employee_id)}</td>
+                <td style={{ padding: "12px 14px", color: "var(--muted)", whiteSpace: "nowrap" }}>{b.bill_date} <span style={{ color: "var(--accent)", fontWeight: 600 }}>{String(b.bill_time || "").slice(0, 5)}</span></td>
+                <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{money(b.gst_amount)}</td>
+                <td style={{ padding: "12px 14px", fontWeight: 800, color: "var(--text)" }}>{money(b.total_amount)}</td>
+                <td style={{ padding: "12px 14px" }}>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button title="View bill" onClick={() => setViewBill(b)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--muted)", display: "flex" }}><Icon d={I.eye} size={13} /></button>
+                    <button title="Print bill" onClick={() => printBill(b)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--accent)", display: "flex" }}><Icon d={I.print} size={13} /></button>
+                    {isAdmin && <button title="Delete bill" onClick={() => setConfirmId(b.id)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "#e53e3e", display: "flex" }}><Icon d={I.del} size={13} /></button>}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {modal === "add" && (
+        <Modal title="New Bill" onClose={() => setModal(null)} wide>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Customer">
+              <select style={IS} value={form.customer_id} onChange={e => setForm({ ...form, customer_id: e.target.value })}>
+                <option value="">- select -</option>
+                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Staff">
+              <select style={IS} value={form.employee_id} onChange={e => setForm({ ...form, employee_id: e.target.value })}>
+                <option value="">- select -</option>
+                {employees.filter(e => e.status === "active").map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </Field>
+          </div>
+          <Field label="Service">
+            <select style={IS} value={form.service_id} onChange={e => setForm({ ...form, service_id: e.target.value })}>
+              <option value="">- select -</option>
+              {services.filter(s => s.is_active).map(s => <option key={s.id} value={s.id}>{s.name} - {money(s.price)}</option>)}
+            </select>
+          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <Field label="Date"><input type="date" style={IS} value={form.bill_date} onChange={e => setForm({ ...form, bill_date: e.target.value })} /></Field>
+            <Field label="Time"><input type="time" style={IS} value={form.bill_time} onChange={e => setForm({ ...form, bill_time: e.target.value })} /></Field>
+            <Field label="Payment">
+              <select style={IS} value={form.payment_mode} onChange={e => setForm({ ...form, payment_mode: e.target.value })}>
+                {["Cash", "UPI", "Card"].map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </Field>
+          </div>
+          <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, padding: "1rem", marginBottom: "1rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, color: "var(--muted)" }}><span>Basic Sales</span><b>{money(subtotal)}</b></div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, color: "var(--muted)" }}><span>GST 5%</span><b>{money(gstAmount)}</b></div>
+            <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, borderTop: "1px solid var(--border)", color: "var(--text)", fontWeight: 800 }}><span>Bill Amount</span><span>{money(total)}</span></div>
+          </div>
+          <Field label="Notes"><textarea style={{ ...IS, minHeight: 68, resize: "vertical" }} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes..." /></Field>
+          {apiErr && <ErrBox msg={apiErr} />}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Btn ghost onClick={() => setModal(null)}>Cancel</Btn>
+            <Btn onClick={save} disabled={saving}>{saving ? "Saving..." : "Save Bill"}</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {viewBill && (
+        <Modal title={`Bill #${billNo(viewBill)}`} onClose={() => setViewBill(null)} wide>
+          <Invoice bill={viewBill} />
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: "1rem" }}>
+            <Btn ghost onClick={() => setViewBill(null)}>Close</Btn>
+            <Btn onClick={() => printBill(viewBill)}><Icon d={I.print} size={15} /> Print</Btn>
+          </div>
+        </Modal>
+      )}
+      {viewBill && <div className="print-only"><Invoice bill={viewBill} printMode /></div>}
+      {confirmId && <Confirm msg="Delete this bill?" loading={deleting} onOk={() => del(confirmId)} onCancel={() => setConfirmId(null)} />}
+    </div>
+  );
+}
+
 export default function App() {
   const [authPage, setAuthPage]       = useState("login");
   const [session, setSession]         = useState(undefined);
@@ -1476,6 +1742,7 @@ export default function App() {
   const [customers,    setCustomers]    = useState([]);
   const [services,     setServices]     = useState([]);
   const [appointments, setAppointments] = useState([]);
+  const [bills,        setBills]        = useState([]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
@@ -1495,16 +1762,18 @@ export default function App() {
 
   const loadData = useCallback(async () => {
     setDataLoading(true);
-    const [er, cr, sr, ar] = await Promise.all([
+    const [er, cr, sr, ar, br] = await Promise.all([
       supabase.from("employees").select("*").order("name"),
       supabase.from("customers").select("*").order("name"),
       supabase.from("services").select("*").order("name"),
       supabase.from("appointments").select("*").order("date", { ascending: false }),
+      supabase.from("bills").select("*").order("bill_date", { ascending: false }),
     ]);
     setEmployees(er.data || []);
     setCustomers(cr.data || []);
     setServices(sr.data || []);
     setAppointments(ar.data || []);
+    setBills(br.data || []);
     setDataLoading(false);
   }, []);
 
@@ -1519,6 +1788,7 @@ export default function App() {
   const nav = [
     { id: "dashboard",    label: isAdmin ? "Owner Dashboard" : "My Dashboard", icon: I.dash },
     { id: "appointments", label: "Appointments",  icon: I.appt },
+    { id: "billing",      label: "Billing",       icon: I.bill },
     { id: "employees",    label: "Employees",     icon: I.emp  },
     { id: "customers",    label: "Customers",     icon: I.cust },
     { id: "services",     label: "Services",      icon: I.serv },
@@ -1613,6 +1883,7 @@ export default function App() {
               <StaffDashboard employees={employees} customers={customers} services={services} appointments={appointments} profile={profile} />
             )}
             {tab === "appointments" && <Appointments appointments={appointments} reload={loadData} employees={employees} customers={customers} services={services} isAdmin={isAdmin} />}
+            {tab === "billing"      && <Billing      bills={bills} reload={loadData} employees={employees} customers={customers} services={services} isAdmin={isAdmin} />}
             {tab === "employees"    && <Employees    employees={employees}    reload={loadData} isAdmin={isAdmin} />}
             {tab === "customers"    && <Customers    customers={customers}    reload={loadData} isAdmin={isAdmin} />}
             {tab === "services"     && <Services     services={services}      reload={loadData} isAdmin={isAdmin} />}
