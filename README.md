@@ -33,31 +33,8 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 ### 4. Create Users
 1. Go to **Supabase → Authentication → Users → Add User**
 2. Create your users (e.g. admin@yoursalon.com)
-3. Then in the **SQL Editor**, add their profile:
-```sql
--- Make a user an owner/admin:
-insert into user_profiles (id, name, role, is_admin)
-values ('<paste-user-uuid-here>', 'Admin', 'Owner', true);
 
--- Make a user staff:
-insert into user_profiles (id, name, role, is_admin)
-values ('<paste-user-uuid-here>', 'Aisha Noor', 'Senior Stylist', false);
-```
 
 ### 5. Run the App
-```bash
 npm install
 npm run dev
-```
-
----
-
-## Database Tables
-
-| Table | Key Columns |
-|---|---|
-| `employees` | name, role, phone, email, joined_date, status |
-| `customers` | name, phone, email, visits, last_visit, notes |
-| `services` | name, category, duration_min, price, is_active |
-| `appointments` | customer_id, employee_id, service_id, date, time, status, notes |
-| `user_profiles` | id (auth user), name, role, is_admin |
