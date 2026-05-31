@@ -551,7 +551,7 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
         return sum + (svc ? Number(svc.price) : 0);
       }, 0);
       const salary = Number(emp.salary || 0);
-      const target = salary * 2; // target = 2x salary
+      const target = Number(emp.target_amount || 0);
       const pct    = target > 0 ? Math.min((revenue / target) * 100, 150) : 0;
       const bonus  = revenue >= target ? 2500 : 0;
       return {
@@ -592,7 +592,7 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
     }, 0);
 
     const salary = Number(emp.salary || 0);
-    const target = salary * 2;
+    const target = Number(emp.target_amount || 0);
 
     return {
       ...emp,
@@ -979,7 +979,7 @@ function Employees({ employees, reload, isAdmin }) {
   const [deleting, setDeleting]   = useState(false);
   const [apiErr, setApiErr]       = useState("");
 
-  const blank = { name: "", role: "", phone: "", email: "", joined_date: today(), status: "active", salary: 0 };
+  const blank = { name: "", role: "", gender: "other", phone: "", email: "", joined_date: today(), status: "active", salary: 0, target_amount: 0 };
   const [form, setForm] = useState(blank);
 
   const openAdd  = () => { setForm(blank); setApiErr(""); setModal("add"); };
@@ -988,7 +988,7 @@ function Employees({ employees, reload, isAdmin }) {
   const save = async () => {
     if (!form.name.trim()) return;
     setSaving(true); setApiErr("");
-    const payload = { name: form.name, role: form.role, phone: form.phone, email: form.email, joined_date: form.joined_date, status: form.status, salary: Number(form.salary || 0) };
+    const payload = { name: form.name, role: form.role, gender: form.gender, phone: form.phone, email: form.email, joined_date: form.joined_date, status: form.status, salary: Number(form.salary || 0), target_amount: Number(form.target_amount || 0) };
     let err;
     if (modal === "add") ({ error: err } = await supabase.from("employees").insert([payload]));
     else ({ error: err } = await supabase.from("employees").update(payload).eq("id", form.id));
@@ -1011,6 +1011,9 @@ function Employees({ employees, reload, isAdmin }) {
     e.name.toLowerCase().includes(search.toLowerCase()) ||
     (e.role || "").toLowerCase().includes(search.toLowerCase())
   );
+  const genderOf = (value) => String(value || "other").toLowerCase();
+  const maleCount = employees.filter(e => genderOf(e.gender) === "male").length;
+  const femaleCount = employees.filter(e => genderOf(e.gender) === "female").length;
 
   return (
     <div>
@@ -1022,6 +1025,12 @@ function Employees({ employees, reload, isAdmin }) {
         </div>
       </div>
       {!isAdmin && <RoleBanner msg="Staff can view but only the owner can add, edit, or delete employees." />}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: "1rem", marginBottom: "1.25rem" }}>
+        <StatCard label="Employees" value={employees.length} sub="total team members" accent="#a78bfa" icon={I.emp} />
+        <StatCard label="Male" value={maleCount} sub="employees" accent="#60a5fa" icon={I.cust} />
+        <StatCard label="Female" value={femaleCount} sub="employees" accent="#f472b6" icon={I.cust} />
+      </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(270px,1fr))", gap: "1rem" }}>
         {filtered.map(emp => (
@@ -1037,12 +1046,13 @@ function Employees({ employees, reload, isAdmin }) {
               </div>
             </div>
             <div style={{ fontWeight: 700, fontSize: ".95rem", color: "var(--text)" }}>{emp.name}</div>
-            <div style={{ color: "var(--accent)", fontSize: ".82rem", fontWeight: 600, marginBottom: 10 }}>{emp.role}</div>
+            <div style={{ color: "var(--accent)", fontSize: ".82rem", fontWeight: 600, marginBottom: 10 }}>{emp.role} · {emp.gender || "other"}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
               {emp.phone && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>📞 {emp.phone}</div>}
               {emp.email && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>✉️ {emp.email}</div>}
               {emp.joined_date && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>📅 Since {emp.joined_date}</div>}
-              {emp.salary > 0 && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>💰 {fmt(emp.salary)}/mo · Target: {fmt(emp.salary * 2)}</div>}
+              {emp.salary > 0 && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>Salary: {fmt(emp.salary)}/mo</div>}
+              {Number(emp.target_amount || 0) > 0 && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>Target: {fmt(emp.target_amount)}</div>}
             </div>
             <div style={{ marginTop: 10 }}>
               <span style={{ fontSize: ".74rem", fontWeight: 700, padding: "2px 10px", borderRadius: 99, background: emp.status === "active" ? "rgba(52,211,153,.15)" : "rgba(156,163,175,.15)", color: emp.status === "active" ? "#34d399" : "#9ca3af" }}>{emp.status}</span>
@@ -1057,26 +1067,31 @@ function Employees({ employees, reload, isAdmin }) {
           <Field label="Full Name"><input style={IS} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Full name" /></Field>
           <Field label="Role"><input style={IS} value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} placeholder="e.g. Senior Stylist" /></Field>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Field label="Phone"><input style={IS} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
+            <Field label="Gender">
+              <select style={IS} value={form.gender || "other"} onChange={e => setForm({ ...form, gender: e.target.value })}>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="other">Other</option>
+              </select>
+            </Field>
             <Field label="Joined Date"><input type="date" style={IS} value={form.joined_date} onChange={e => setForm({ ...form, joined_date: e.target.value })} /></Field>
           </div>
+          <Field label="Phone"><input style={IS} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
           <Field label="Email"><input style={IS} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Field label="Monthly Salary (₹)">
               <input type="number" style={IS} value={form.salary} onChange={e => setForm({ ...form, salary: e.target.value })} placeholder="0" />
             </Field>
-            <Field label="Status">
-              <select style={IS} value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
+            <Field label="Monthly Target (₹)">
+              <input type="number" style={IS} value={form.target_amount || 0} onChange={e => setForm({ ...form, target_amount: e.target.value })} placeholder="0" />
             </Field>
           </div>
-          {form.salary > 0 && (
-            <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: "1rem", background: "rgba(192,132,252,.08)", padding: "8px 12px", borderRadius: 8 }}>
-              Monthly target: <strong style={{ color: "var(--accent)" }}>{fmt(form.salary * 2)}</strong> · Bonus on achievement: <strong style={{ color: "#f59e0b" }}>₹2,500</strong>
-            </div>
-          )}
+          <Field label="Status">
+            <select style={IS} value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </Field>
           {apiErr && <ErrBox msg={apiErr} />}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Btn ghost onClick={() => setModal(null)}>Cancel</Btn>
@@ -1100,7 +1115,7 @@ function Customers({ customers, reload, isAdmin }) {
   const [deleting, setDeleting]   = useState(false);
   const [apiErr, setApiErr]       = useState("");
 
-  const blank = { name: "", phone: "", email: "", visits: 0, last_visit: today(), notes: "" };
+  const blank = { name: "", gender: "other", phone: "", email: "", visits: 0, last_visit: today(), has_membership: false, membership_card_no: "", membership_start: "", membership_end: "", notes: "" };
   const [form, setForm] = useState(blank);
 
   const openAdd  = () => { setForm(blank); setApiErr(""); setModal("add"); };
@@ -1109,7 +1124,7 @@ function Customers({ customers, reload, isAdmin }) {
   const save = async () => {
     if (!form.name.trim()) return;
     setSaving(true); setApiErr("");
-    const payload = { name: form.name, phone: form.phone, email: form.email, visits: Number(form.visits), last_visit: form.last_visit, notes: form.notes };
+    const payload = { name: form.name, gender: form.gender, phone: form.phone, email: form.email, visits: Number(form.visits), last_visit: form.last_visit, has_membership: !!form.has_membership, membership_card_no: form.membership_card_no, membership_start: form.membership_start || null, membership_end: form.membership_end || null, notes: form.notes };
     let err;
     if (modal === "add") ({ error: err } = await supabase.from("customers").insert([payload]));
     else ({ error: err } = await supabase.from("customers").update(payload).eq("id", form.id));
@@ -1132,6 +1147,11 @@ function Customers({ customers, reload, isAdmin }) {
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     (c.phone || "").includes(search)
   );
+  const genderOf = (value) => String(value || "other").toLowerCase();
+  const maleCount = customers.filter(c => genderOf(c.gender) === "male").length;
+  const femaleCount = customers.filter(c => genderOf(c.gender) === "female").length;
+  const repeatCount = customers.filter(c => Number(c.visits || 0) > 1).length;
+  const nonRepeatCount = customers.length - repeatCount;
 
   return (
     <div>
@@ -1143,6 +1163,14 @@ function Customers({ customers, reload, isAdmin }) {
         </div>
       </div>
       {!isAdmin && <RoleBanner msg="Staff can view and add customers, but only the owner can delete them." />}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: "1rem", marginBottom: "1.25rem" }}>
+        <StatCard label="Customers" value={customers.length} sub="total clients" accent="#a78bfa" icon={I.cust} />
+        <StatCard label="Male" value={maleCount} sub="customers" accent="#60a5fa" icon={I.cust} />
+        <StatCard label="Female" value={femaleCount} sub="customers" accent="#f472b6" icon={I.cust} />
+        <StatCard label="Repeat" value={repeatCount} sub="more than 1 visit" accent="#34d399" icon={I.star} />
+        <StatCard label="New" value={nonRepeatCount} sub="single visit" accent="#f59e0b" icon={I.target} />
+      </div>
 
       <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
@@ -1157,7 +1185,13 @@ function Customers({ customers, reload, isAdmin }) {
             {filtered.length === 0 && <tr><td colSpan={6} style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>No customers found.</td></tr>}
             {filtered.map(c => (
               <tr key={c.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                <td style={{ padding: "12px 14px", fontWeight: 700, color: "var(--text)" }}>{c.name}</td>
+                <td style={{ padding: "12px 14px", fontWeight: 700, color: "var(--text)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    {c.name}
+                    {c.has_membership && <span title="Membership customer" style={{ color: "#f59e0b", display: "inline-flex" }}><Icon d={I.gift} size={14} /></span>}
+                  </div>
+                  <div style={{ fontSize: ".74rem", color: "var(--muted)", fontWeight: 600 }}>{c.gender || "other"}</div>
+                </td>
                 <td style={{ padding: "12px 14px", color: "var(--muted)" }}><div>{c.phone}</div><div style={{ fontSize: ".78rem" }}>{c.email}</div></td>
                 <td style={{ padding: "12px 14px" }}><span style={{ background: "var(--accent)", color: "var(--bg)", borderRadius: 99, padding: "2px 10px", fontWeight: 700, fontSize: ".8rem" }}>{c.visits}</span></td>
                 <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{c.last_visit}</td>
@@ -1178,11 +1212,33 @@ function Customers({ customers, reload, isAdmin }) {
         <Modal title={modal === "add" ? "Add Customer" : "Edit Customer"} onClose={() => setModal(null)}>
           <Field label="Full Name"><input style={IS} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Field label="Phone"><input style={IS} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
+            <Field label="Gender">
+              <select style={IS} value={form.gender || "other"} onChange={e => setForm({ ...form, gender: e.target.value })}>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="other">Other</option>
+              </select>
+            </Field>
             <Field label="Visits"><input type="number" style={IS} value={form.visits} onChange={e => setForm({ ...form, visits: e.target.value })} /></Field>
           </div>
+          <Field label="Phone"><input style={IS} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
           <Field label="Email"><input style={IS} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
           <Field label="Last Visit"><input type="date" style={IS} value={form.last_visit} onChange={e => setForm({ ...form, last_visit: e.target.value })} /></Field>
+          <Field label="Membership">
+            <label style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text)", fontSize: ".88rem", fontWeight: 700 }}>
+              <input type="checkbox" checked={!!form.has_membership} onChange={e => setForm({ ...form, has_membership: e.target.checked })} />
+              Customer has membership
+            </label>
+          </Field>
+          {form.has_membership && (
+            <>
+              <Field label="Membership Card No."><input style={IS} value={form.membership_card_no || ""} onChange={e => setForm({ ...form, membership_card_no: e.target.value })} /></Field>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <Field label="Membership Start"><input type="date" style={IS} value={form.membership_start || ""} onChange={e => setForm({ ...form, membership_start: e.target.value })} /></Field>
+                <Field label="Membership End"><input type="date" style={IS} value={form.membership_end || ""} onChange={e => setForm({ ...form, membership_end: e.target.value })} /></Field>
+              </div>
+            </>
+          )}
           <Field label="Notes"><textarea style={{ ...IS, minHeight: 68, resize: "vertical" }} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field>
           {apiErr && <ErrBox msg={apiErr} />}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -1208,7 +1264,7 @@ function Services({ services, reload, isAdmin }) {
   const [deleting, setDeleting]   = useState(false);
   const [apiErr, setApiErr]       = useState("");
 
-  const blank = { name: "", category: "Hair", duration_min: 60, price: 0, is_active: true };
+  const blank = { name: "", category: "Hair", duration_min: 60, general_price: 0, membership_price: 0, is_active: true };
   const [form, setForm] = useState(blank);
 
   const cats = ["All", ...new Set(services.map(s => s.category))];
@@ -1218,7 +1274,9 @@ function Services({ services, reload, isAdmin }) {
   const save = async () => {
     if (!form.name.trim()) return;
     setSaving(true); setApiErr("");
-    const payload = { name: form.name, category: form.category, duration_min: Number(form.duration_min), price: Number(form.price), is_active: form.is_active };
+    const generalPrice = Number(form.general_price ?? form.price ?? 0);
+    const membershipPrice = Number(form.membership_price ?? generalPrice);
+    const payload = { name: form.name, category: form.category, duration_min: Number(form.duration_min), price: generalPrice, general_price: generalPrice, membership_price: membershipPrice, is_active: form.is_active };
     let err;
     if (modal === "add") ({ error: err } = await supabase.from("services").insert([payload]));
     else ({ error: err } = await supabase.from("services").update(payload).eq("id", form.id));
@@ -1279,7 +1337,8 @@ function Services({ services, reload, isAdmin }) {
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
                 <div>
-                  <div style={{ fontSize: "1.25rem", fontWeight: 800, color: col, fontFamily: "'Playfair Display',serif" }}>{fmt(s.price)}</div>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 800, color: col, fontFamily: "'Playfair Display',serif" }}>General {fmt(s.general_price ?? s.price)}</div>
+                  <div style={{ fontSize: ".82rem", color: "var(--muted)", fontWeight: 700 }}>Member {fmt(s.membership_price ?? s.price)}</div>
                   <div style={{ fontSize: ".78rem", color: "var(--muted)" }}>⏱ {s.duration_min} min</div>
                 </div>
                 <span style={{ fontSize: ".73rem", fontWeight: 700, padding: "2px 10px", borderRadius: 99, background: s.is_active ? "rgba(52,211,153,.15)" : "rgba(156,163,175,.15)", color: s.is_active ? "#34d399" : "#9ca3af" }}>
@@ -1304,7 +1363,10 @@ function Services({ services, reload, isAdmin }) {
             <Field label="Duration (min)"><input type="number" style={IS} value={form.duration_min} onChange={e => setForm({ ...form, duration_min: e.target.value })} /></Field>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Field label="Price (₹)"><input type="number" style={IS} value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></Field>
+            <Field label="General Price (₹)"><input type="number" style={IS} value={form.general_price ?? form.price ?? 0} onChange={e => setForm({ ...form, general_price: e.target.value })} /></Field>
+            <Field label="Membership Price (₹)"><input type="number" style={IS} value={form.membership_price ?? form.price ?? 0} onChange={e => setForm({ ...form, membership_price: e.target.value })} /></Field>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
             <Field label="Status">
               <select style={IS} value={form.is_active ? "active" : "inactive"} onChange={e => setForm({ ...form, is_active: e.target.value === "active" })}>
                 <option value="active">Active</option>
@@ -1474,55 +1536,146 @@ function Appointments({ appointments, reload, employees, customers, services, is
 // APP ROOT
 // ─────────────────────────────────────────────────────────────
 function Billing({ bills, reload, employees, customers, services, isAdmin }) {
-  const [modal, setModal]         = useState(null);
+  const [modal, setModal]         = useState(null); // "add" | "edit" | null
+  const [editBill, setEditBill]   = useState(null);
   const [viewBill, setViewBill]   = useState(null);
   const [confirmId, setConfirmId] = useState(null);
   const [dateFilter, setDateFilter] = useState(today());
   const [search, setSearch]       = useState("");
+  const [serviceSearch, setServiceSearch] = useState([""]);
   const [saving, setSaving]       = useState(false);
   const [deleting, setDeleting]   = useState(false);
   const [apiErr, setApiErr]       = useState("");
 
-  const blankForm = { customer_id: "", employee_id: "", service_id: "", bill_date: today(), bill_time: "10:00", payment_mode: "Cash", notes: "" };
+  const blankForm = {
+    customer_id: "", employee_id: "", bill_date: today(), bill_time: "10:00",
+    pricing_type: "general", manual_discount: 0, payment_mode: "Cash", notes: "",
+  };
   const [form, setForm] = useState(blankForm);
+  const [items, setItems] = useState([{ service_id: "" }]);
 
-  const money = (n) => `Rs. ${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const getName = (list, id, fallback = "-") => list.find(x => x.id === id)?.name || fallback;
-  const selectedService = services.find(s => s.id === form.service_id);
-  const subtotal = Number(selectedService?.price || 0);
-  const gstAmount = +(subtotal * 0.05).toFixed(2);
-  const total = +(subtotal + gstAmount).toFixed(2);
+  // ── helpers ────────────────────────────────────────────────────────────────
+  const money     = (n) => `Rs. ${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const getName   = (list, id, fallback = "-") => list.find(x => x.id === id)?.name || fallback;
+  const priceFor  = (service, type = form.pricing_type) =>
+    Number(type === "membership" ? (service?.membership_price ?? service?.price ?? 0) : (service?.general_price ?? service?.price ?? 0));
+  const generalFor = (service) => Number(service?.general_price ?? service?.price ?? 0);
+  const billNo     = (b) => String(b.invoice_no || "").padStart(5, "0");
 
-  const openAdd = () => { setForm({ ...blankForm, bill_date: dateFilter || today() }); setApiErr(""); setModal("add"); };
-  const billNo = (b) => String(b.invoice_no || "").padStart(5, "0");
+  // ── live totals for the form ────────────────────────────────────────────────
+  const billItems = items
+    .map(item => services.find(s => s.id === item.service_id))
+    .filter(Boolean)
+    .map(service => ({ service, general: generalFor(service), rate: priceFor(service) }));
 
-  const save = async () => {
-    if (!form.customer_id || !form.employee_id || !form.service_id || !form.bill_date) return;
+  const originalSubtotal  = billItems.reduce((sum, item) => sum + item.general, 0);
+  const selectedSubtotal  = billItems.reduce((sum, item) => sum + item.rate, 0);
+  const automaticDiscount = billItems.reduce((sum, item) => sum + Math.max(item.general - item.rate, 0), 0);
+  const manualDiscount    = Math.min(Math.max(Number(form.manual_discount || 0), 0), selectedSubtotal);
+  const discountAmount    = automaticDiscount + manualDiscount;
+  const taxableSubtotal   = Math.max(selectedSubtotal - manualDiscount, 0);
+  const gstAmount         = +(taxableSubtotal * 0.05).toFixed(2);
+  const total             = +(taxableSubtotal + gstAmount).toFixed(2);
+
+  // ── open modals ─────────────────────────────────────────────────────────────
+  const openAdd = () => {
+    setForm({ ...blankForm, bill_date: dateFilter || today() });
+    setItems([{ service_id: "" }]);
+    setServiceSearch([""]);
+    setApiErr("");
+    setEditBill(null);
+    setModal("add");
+  };
+
+  const openEdit = (bill) => {
+    const lineItems = Array.isArray(bill.line_items) && bill.line_items.length
+      ? bill.line_items.map(row => ({ service_id: row.service_id }))
+      : [{ service_id: bill.service_id || "" }];
+
+    setForm({
+      customer_id:     bill.customer_id    || "",
+      employee_id:     bill.employee_id    || "",
+      bill_date:       bill.bill_date      || today(),
+      bill_time:       bill.bill_time      || "10:00",
+      pricing_type:    bill.pricing_type   || "general",
+      manual_discount: bill.manual_discount ?? 0,
+      payment_mode:    bill.payment_mode   || "Cash",
+      notes:           bill.notes          || "",
+    });
+    setItems(lineItems);
+    setServiceSearch(lineItems.map(() => ""));
+    setApiErr("");
+    setEditBill(bill);
+    setModal("edit");
+  };
+
+  // ── item helpers ────────────────────────────────────────────────────────────
+  const addItem    = () => { setItems([...items, { service_id: "" }]); setServiceSearch([...serviceSearch, ""]); };
+  const removeItem = (index) => { setItems(items.filter((_, i) => i !== index)); setServiceSearch(serviceSearch.filter((_, i) => i !== index)); };
+  const updateItem = (index, service_id) => setItems(items.map((item, i) => i === index ? { ...item, service_id } : item));
+  const updateCustomer = (customer_id) => {
+    const customer = customers.find(c => c.id === customer_id);
+    setForm({ ...form, customer_id, pricing_type: customer?.has_membership ? "membership" : "general" });
+  };
+
+  // ── build payload (shared by save & update) ─────────────────────────────────
+  const buildPayload = () => {
+    const selected = items.map(item => services.find(s => s.id === item.service_id)).filter(Boolean);
+    if (!form.customer_id || !form.employee_id || selected.length === 0 || !form.bill_date) return null;
     const customer = customers.find(c => c.id === form.customer_id);
     const employee = employees.find(e => e.id === form.employee_id);
-    const service = services.find(s => s.id === form.service_id);
-    if (!customer || !employee || !service) return;
+    if (!customer || !employee) return null;
 
-    setSaving(true); setApiErr("");
-    const base = Number(service.price || 0);
-    const gst = +(base * 0.05).toFixed(2);
-    const payload = {
-      customer_id: customer.id,
-      employee_id: employee.id,
-      service_id: service.id,
-      customer_name: customer.name,
-      employee_name: employee.name,
-      service_name: service.name,
-      service_price: base,
-      subtotal: base,
-      gst_rate: 5,
-      gst_amount: gst,
-      total_amount: +(base + gst).toFixed(2),
-      bill_date: form.bill_date,
-      bill_time: form.bill_time,
-      payment_mode: form.payment_mode,
-      notes: form.notes,
+    const rows = selected.map(service => {
+      const general = generalFor(service);
+      const rate    = priceFor(service, form.pricing_type);
+      return {
+        service_id:    service.id,
+        service_name:  service.name,
+        qty:           1,
+        general_price: general,
+        rate,
+        amount:        rate,
+        discount:      Math.max(general - rate, 0),
+      };
+    });
+
+    const original      = rows.reduce((sum, row) => sum + row.general_price, 0);
+    const base          = rows.reduce((sum, row) => sum + row.amount, 0);        // after membership discount
+    const autoDiscount  = rows.reduce((sum, row) => sum + row.discount, 0);
+    const manualDisc    = Math.min(Math.max(Number(form.manual_discount || 0), 0), base);
+    const taxable       = Math.max(base - manualDisc, 0);
+    const gst           = +(taxable * 0.05).toFixed(2);
+    const grandTotal    = +(taxable + gst).toFixed(2);
+
+    return {
+      customer_id:      customer.id,
+      employee_id:      employee.id,
+      service_id:       rows[0]?.service_id || null,
+      customer_name:    customer.name,
+      employee_name:    employee.name,
+      service_name:     rows.map(row => row.service_name).join(", "),
+      service_price:    original,
+      subtotal:         original,
+      gst_rate:         5,
+      gst_amount:       gst,
+      total_amount:     grandTotal,
+      pricing_type:     form.pricing_type,
+      discount_amount:  autoDiscount + manualDisc,   // ← total discount (auto + manual)
+      manual_discount:  manualDisc,                  // ← stored separately for invoice display
+      line_items:       rows,
+      bill_date:        form.bill_date,
+      bill_time:        form.bill_time,
+      payment_mode:     form.payment_mode,
+      notes:            form.notes,
     };
+  };
+
+  // ── save (insert) ───────────────────────────────────────────────────────────
+  const save = async () => {
+    const payload = buildPayload();
+    if (!payload) return;
+    setSaving(true); setApiErr("");
     const { error: err } = await supabase.from("bills").insert([payload]);
     setSaving(false);
     if (err) { setApiErr(err.message); return; }
@@ -1530,6 +1683,20 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
     setModal(null);
   };
 
+  // ── update (edit) ───────────────────────────────────────────────────────────
+  const update = async () => {
+    const payload = buildPayload();
+    if (!payload || !editBill) return;
+    setSaving(true); setApiErr("");
+    const { error: err } = await supabase.from("bills").update(payload).eq("id", editBill.id);
+    setSaving(false);
+    if (err) { setApiErr(err.message); return; }
+    await reload();
+    setModal(null);
+    setEditBill(null);
+  };
+
+  // ── delete ──────────────────────────────────────────────────────────────────
   const del = async (id) => {
     setDeleting(true);
     const { error: err } = await supabase.from("bills").delete().eq("id", id);
@@ -1544,6 +1711,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
     setTimeout(() => window.print(), 80);
   };
 
+  // ── filtered list ───────────────────────────────────────────────────────────
   const filtered = bills
     .filter(b => !dateFilter || b.bill_date === dateFilter)
     .filter(b => {
@@ -1552,19 +1720,40 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
     })
     .sort((a, b) => `${a.bill_date}${a.bill_time}` < `${b.bill_date}${b.bill_time}` ? 1 : -1);
 
+  // ── Invoice component ───────────────────────────────────────────────────────
   const Invoice = ({ bill, printMode = false }) => {
     if (!bill) return null;
     const customer = bill.customer_name || getName(customers, bill.customer_id);
     const employee = bill.employee_name || getName(employees, bill.employee_id);
-    const service = bill.service_name || getName(services, bill.service_id);
-    const base = Number(bill.subtotal ?? bill.service_price ?? 0);
-    const gst = Number(bill.gst_amount ?? base * 0.05);
-    const grandTotal = Number(bill.total_amount ?? base + gst);
-    const text = printMode ? "#000" : "var(--text)";
-    const muted = printMode ? "#333" : "var(--muted)";
-    const line = printMode ? "#111" : "var(--border)";
+
+    const rows = Array.isArray(bill.line_items) && bill.line_items.length
+      ? bill.line_items
+      : [{
+          service_name:  bill.service_name || getName(services, bill.service_id),
+          qty:           1,
+          general_price: bill.service_price ?? bill.subtotal ?? 0,
+          rate:          bill.subtotal ?? bill.service_price ?? 0,
+          amount:        bill.subtotal ?? bill.service_price ?? 0,
+        }];
+
+    // Use stored values when available; fall back to calculation
+    const base         = rows.reduce((sum, row) => sum + Number(row.general_price ?? row.rate ?? row.amount ?? 0), 0)
+                         || Number(bill.subtotal ?? bill.service_price ?? 0);
+    const autoDiscount = rows.reduce((sum, row) => sum + Number(row.discount ?? 0), 0);
+    const manualDisc   = Number(bill.manual_discount ?? 0);                       // ← restored from DB
+    const discount     = Number(bill.discount_amount ?? autoDiscount + manualDisc);
+    const taxable      = rows.reduce((sum, row) => sum + Number(row.amount ?? row.rate ?? 0), 0) - manualDisc
+                         || Math.max(base - discount, 0);
+    const gst          = Number(bill.gst_amount ?? taxable * 0.05);
+    const grandTotal   = Number(bill.total_amount ?? taxable + gst);
+
+    const text  = printMode ? "#000"  : "var(--text)";
+    const muted = printMode ? "#333"  : "var(--muted)";
+    const line  = printMode ? "#111"  : "var(--border)";
+
     return (
       <div style={{ color: text, background: printMode ? "#fff" : "var(--card)", width: "100%", maxWidth: printMode ? "none" : 420, margin: "0 auto", fontSize: printMode ? 10 : ".82rem", lineHeight: 1.35 }}>
+        {/* Header */}
         <div style={{ textAlign: "center", borderBottom: `1px solid ${line}`, paddingBottom: 10, marginBottom: 10 }}>
           <div style={{ fontFamily: printMode ? "Arial,sans-serif" : "'Playfair Display',serif", fontSize: printMode ? 28 : "1.8rem", fontWeight: 800, color: printMode ? "#8b45a0" : "var(--accent)" }}>naturals</div>
           <div style={{ fontWeight: 800, fontSize: printMode ? 11 : ".75rem" }}>Tax Invoice</div>
@@ -1573,6 +1762,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
           <div style={{ fontWeight: 700, marginTop: 5 }}>GST No: 37DLGPK2785A1Z4</div>
         </div>
 
+        {/* Bill details */}
         <div style={{ borderBottom: `1px solid ${line}`, paddingBottom: 8, marginBottom: 8 }}>
           <div><b>Customer Name</b> : {customer}</div>
           <div><b>Client Phone</b> : {customers.find(c => c.id === bill.customer_id)?.phone || "-"}</div>
@@ -1581,28 +1771,36 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
           <div><b>Served By</b> : {employee}</div>
         </div>
 
+        {/* Line items */}
         <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 8 }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${line}` }}>
-              {["Particulars", "Qty", "Rate", "Amount"].map(h => <th key={h} style={{ textAlign: h === "Particulars" ? "left" : "right", padding: "4px 0", fontSize: printMode ? 9 : ".72rem", textTransform: "uppercase" }}>{h}</th>)}
+              {["Particulars", "Qty", "Rate", "Amount"].map(h => (
+                <th key={h} style={{ textAlign: h === "Particulars" ? "left" : "right", padding: "4px 0", fontSize: printMode ? 9 : ".72rem", textTransform: "uppercase" }}>{h}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td style={{ padding: "5px 0", fontWeight: 700 }}>{service}</td>
-              <td style={{ padding: "5px 0", textAlign: "right" }}>1</td>
-              <td style={{ padding: "5px 0", textAlign: "right" }}>{money(bill.service_price ?? base)}</td>
-              <td style={{ padding: "5px 0", textAlign: "right" }}>{money(base)}</td>
-            </tr>
+            {rows.map((row, index) => (
+              <tr key={`${row.service_id || row.service_name}-${index}`}>
+                <td style={{ padding: "5px 0", fontWeight: 700 }}>{row.service_name}</td>
+                <td style={{ padding: "5px 0", textAlign: "right" }}>{row.qty || 1}</td>
+                <td style={{ padding: "5px 0", textAlign: "right" }}>{money(row.general_price ?? row.rate ?? row.amount)}</td>
+                <td style={{ padding: "5px 0", textAlign: "right" }}>{money(row.general_price ?? row.amount ?? row.rate)}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
 
+        {/* Totals */}
         <div style={{ borderTop: `1px solid ${line}`, paddingTop: 8 }}>
           {[
-            ["Basic Sales", base],
+            ["Basic Sales",    base],
+            ["Discount",       discount],       // ← now shows auto + manual discount
+            ["Taxable Amount", taxable],
             ["GST Amount (5%)", gst],
-            ["Round Off", 0],
-            ["Bill Amount", grandTotal],
+            ["Round Off",      0],
+            ["Bill Amount",    grandTotal],
           ].map(([label, value]) => (
             <div key={label} style={{ display: "flex", justifyContent: "space-between", fontWeight: label === "Bill Amount" ? 800 : 600, marginBottom: 4, fontSize: label === "Bill Amount" && !printMode ? ".95rem" : undefined }}>
               <span>{label}</span><span>{money(value)}</span>
@@ -1610,12 +1808,16 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
           ))}
         </div>
 
+        {/* Payment & GST summary */}
         <div style={{ marginTop: 12, borderTop: `1px solid ${line}`, paddingTop: 8, fontSize: printMode ? 9 : ".72rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}><b>Payment Mode</b><span>{bill.payment_mode || "Cash"}</span></div>
           <div style={{ marginTop: 8, fontWeight: 800 }}>GST Tax Summary:</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", textAlign: "right", gap: 4, marginTop: 4 }}>
             <b style={{ textAlign: "left" }}>GST</b><b>CGST</b><b>SGST</b><b>Total</b>
-            <span style={{ textAlign: "left" }}>5%</span><span>{money(gst / 2)}</span><span>{money(gst / 2)}</span><span>{money(gst)}</span>
+            <span style={{ textAlign: "left" }}>5%</span>
+            <span>{money(gst / 2)}</span>
+            <span>{money(gst / 2)}</span>
+            <span>{money(gst)}</span>
           </div>
         </div>
 
@@ -1626,8 +1828,113 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
     );
   };
 
+  // ── shared form body (used by both add & edit modals) ───────────────────────
+  const BillForm = () => (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Customer">
+          <select style={IS} value={form.customer_id} onChange={e => updateCustomer(e.target.value)}>
+            <option value="">- select -</option>
+            {customers.map(c => <option key={c.id} value={c.id}>{c.name}{c.has_membership ? " (Member)" : ""}</option>)}
+          </select>
+        </Field>
+        <Field label="Staff">
+          <select style={IS} value={form.employee_id} onChange={e => setForm({ ...form, employee_id: e.target.value })}>
+            <option value="">- select -</option>
+            {employees.filter(e => e.status === "active").map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      <Field label="Price Type">
+        <select style={IS} value={form.pricing_type} onChange={e => setForm({ ...form, pricing_type: e.target.value })}>
+          <option value="general">General / Non membership</option>
+          <option value="membership">Membership</option>
+        </select>
+      </Field>
+
+      <div style={{ marginBottom: "1rem" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <label style={{ display: "block", fontSize: ".78rem", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Services</label>
+          <Btn small ghost onClick={addItem}><Icon d={I.add} size={13} /> Add Service</Btn>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {items.map((item, index) => {
+            const q        = (serviceSearch[index] || "").toLowerCase();
+            const selected = services.find(s => s.id === item.service_id);
+            const choices  = services.filter(s => s.is_active && (!q || s.name.toLowerCase().includes(q) || (s.category || "").toLowerCase().includes(q)));
+            return (
+              <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr auto", gap: 8, alignItems: "center" }}>
+                <input
+                  placeholder="Search service..."
+                  style={IS}
+                  value={serviceSearch[index] || ""}
+                  onChange={e => setServiceSearch(serviceSearch.map((v, i) => i === index ? e.target.value : v))}
+                />
+                <select style={IS} value={item.service_id} onChange={e => updateItem(index, e.target.value)}>
+                  <option value="">- select -</option>
+                  {choices.map(s => <option key={s.id} value={s.id}>{s.name} - {money(priceFor(s))}</option>)}
+                </select>
+                <button
+                  onClick={() => items.length > 1 && removeItem(index)}
+                  disabled={items.length === 1}
+                  style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "9px 10px", cursor: items.length > 1 ? "pointer" : "not-allowed", color: items.length > 1 ? "#e53e3e" : "var(--border)", display: "flex" }}
+                >
+                  <Icon d={I.del} size={14} />
+                </button>
+                {selected && (
+                  <div style={{ gridColumn: "1 / -1", fontSize: ".76rem", color: "var(--muted)" }}>
+                    General {money(generalFor(selected))} · Selected {money(priceFor(selected))} · Discount {money(Math.max(generalFor(selected) - priceFor(selected), 0))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+        <Field label="Date"><input type="date" style={IS} value={form.bill_date} onChange={e => setForm({ ...form, bill_date: e.target.value })} /></Field>
+        <Field label="Time"><input type="time" style={IS} value={form.bill_time} onChange={e => setForm({ ...form, bill_time: e.target.value })} /></Field>
+        <Field label="Payment">
+          <select style={IS} value={form.payment_mode} onChange={e => setForm({ ...form, payment_mode: e.target.value })}>
+            {["Cash", "UPI", "Card"].map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+        <Field label="Additional Discount">
+          <input
+            placeholder="Manual Discount"
+            style={IS}
+            value={form.manual_discount}
+            onChange={e => setForm({ ...form, manual_discount: e.target.value })}
+          />
+        </Field>
+      </div>
+
+      {/* Live totals preview */}
+      <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, padding: "1rem", marginBottom: "1rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, color: "var(--muted)" }}><span>Basic Sales</span><b>{money(originalSubtotal)}</b></div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, color: "var(--muted)" }}><span>Discount</span><b>{money(discountAmount)}</b></div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, color: "var(--muted)" }}><span>Taxable Amount</span><b>{money(taxableSubtotal)}</b></div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, color: "var(--muted)" }}><span>GST 5%</span><b>{money(gstAmount)}</b></div>
+        <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, borderTop: "1px solid var(--border)", color: "var(--text)", fontWeight: 800 }}><span>Bill Amount</span><span>{money(total)}</span></div>
+      </div>
+
+      <Field label="Notes">
+        <textarea style={{ ...IS, minHeight: 68, resize: "vertical" }} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes..." />
+      </Field>
+
+      {apiErr && <ErrBox msg={apiErr} />}
+    </>
+  );
+
+  // ── render ──────────────────────────────────────────────────────────────────
   return (
     <div>
+      {/* Toolbar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: 12 }}>
         <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.6rem", margin: 0, color: "var(--text)" }}>Billing</h2>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -1637,6 +1944,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
         </div>
       </div>
 
+      {/* Bills table */}
       <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
           <thead>
@@ -1647,21 +1955,42 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 && <tr><td colSpan={8} style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>No bills found.</td></tr>}
+            {filtered.length === 0 && (
+              <tr><td colSpan={8} style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>No bills found.</td></tr>
+            )}
             {filtered.map(b => (
               <tr key={b.id} style={{ borderBottom: "1px solid var(--border)" }}>
                 <td style={{ padding: "12px 14px", fontWeight: 800, color: "var(--text)" }}>#{billNo(b)}</td>
                 <td style={{ padding: "12px 14px", color: "var(--text)" }}>{b.customer_name || getName(customers, b.customer_id)}</td>
                 <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{b.service_name || getName(services, b.service_id)}</td>
                 <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{b.employee_name || getName(employees, b.employee_id)}</td>
-                <td style={{ padding: "12px 14px", color: "var(--muted)", whiteSpace: "nowrap" }}>{b.bill_date} <span style={{ color: "var(--accent)", fontWeight: 600 }}>{String(b.bill_time || "").slice(0, 5)}</span></td>
+                <td style={{ padding: "12px 14px", color: "var(--muted)", whiteSpace: "nowrap" }}>
+                  {b.bill_date} <span style={{ color: "var(--accent)", fontWeight: 600 }}>{String(b.bill_time || "").slice(0, 5)}</span>
+                </td>
                 <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{money(b.gst_amount)}</td>
                 <td style={{ padding: "12px 14px", fontWeight: 800, color: "var(--text)" }}>{money(b.total_amount)}</td>
                 <td style={{ padding: "12px 14px" }}>
                   <div style={{ display: "flex", gap: 6 }}>
-                    <button title="View bill" onClick={() => setViewBill(b)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--muted)", display: "flex" }}><Icon d={I.eye} size={13} /></button>
-                    <button title="Print bill" onClick={() => printBill(b)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--accent)", display: "flex" }}><Icon d={I.print} size={13} /></button>
-                    {isAdmin && <button title="Delete bill" onClick={() => setConfirmId(b.id)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "#e53e3e", display: "flex" }}><Icon d={I.del} size={13} /></button>}
+                    {/* View */}
+                    <button title="View bill" onClick={() => setViewBill(b)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--muted)", display: "flex" }}>
+                      <Icon d={I.eye} size={13} />
+                    </button>
+                    {/* Print */}
+                    <button title="Print bill" onClick={() => printBill(b)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--accent)", display: "flex" }}>
+                      <Icon d={I.print} size={13} />
+                    </button>
+                    {/* Edit — admin only */}
+                    {isAdmin && (
+                      <button title="Edit bill" onClick={() => openEdit(b)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--accent)", display: "flex" }}>
+                        <Icon d={I.edit} size={13} />
+                      </button>
+                    )}
+                    {/* Delete — admin only */}
+                    {isAdmin && (
+                      <button title="Delete bill" onClick={() => setConfirmId(b.id)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "#e53e3e", display: "flex" }}>
+                        <Icon d={I.del} size={13} />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -1670,44 +1999,10 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
         </table>
       </div>
 
+      {/* Add modal */}
       {modal === "add" && (
         <Modal title="New Bill" onClose={() => setModal(null)} wide>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Field label="Customer">
-              <select style={IS} value={form.customer_id} onChange={e => setForm({ ...form, customer_id: e.target.value })}>
-                <option value="">- select -</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Staff">
-              <select style={IS} value={form.employee_id} onChange={e => setForm({ ...form, employee_id: e.target.value })}>
-                <option value="">- select -</option>
-                {employees.filter(e => e.status === "active").map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
-            </Field>
-          </div>
-          <Field label="Service">
-            <select style={IS} value={form.service_id} onChange={e => setForm({ ...form, service_id: e.target.value })}>
-              <option value="">- select -</option>
-              {services.filter(s => s.is_active).map(s => <option key={s.id} value={s.id}>{s.name} - {money(s.price)}</option>)}
-            </select>
-          </Field>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-            <Field label="Date"><input type="date" style={IS} value={form.bill_date} onChange={e => setForm({ ...form, bill_date: e.target.value })} /></Field>
-            <Field label="Time"><input type="time" style={IS} value={form.bill_time} onChange={e => setForm({ ...form, bill_time: e.target.value })} /></Field>
-            <Field label="Payment">
-              <select style={IS} value={form.payment_mode} onChange={e => setForm({ ...form, payment_mode: e.target.value })}>
-                {["Cash", "UPI", "Card"].map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </Field>
-          </div>
-          <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, padding: "1rem", marginBottom: "1rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, color: "var(--muted)" }}><span>Basic Sales</span><b>{money(subtotal)}</b></div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, color: "var(--muted)" }}><span>GST 5%</span><b>{money(gstAmount)}</b></div>
-            <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, borderTop: "1px solid var(--border)", color: "var(--text)", fontWeight: 800 }}><span>Bill Amount</span><span>{money(total)}</span></div>
-          </div>
-          <Field label="Notes"><textarea style={{ ...IS, minHeight: 68, resize: "vertical" }} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes..." /></Field>
-          {apiErr && <ErrBox msg={apiErr} />}
+          <BillForm />
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Btn ghost onClick={() => setModal(null)}>Cancel</Btn>
             <Btn onClick={save} disabled={saving}>{saving ? "Saving..." : "Save Bill"}</Btn>
@@ -1715,6 +2010,18 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
         </Modal>
       )}
 
+      {/* Edit modal */}
+      {modal === "edit" && (
+        <Modal title={`Edit Bill #${billNo(editBill)}`} onClose={() => { setModal(null); setEditBill(null); }} wide>
+          <BillForm />
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Btn ghost onClick={() => { setModal(null); setEditBill(null); }}>Cancel</Btn>
+            <Btn onClick={update} disabled={saving}>{saving ? "Saving..." : "Update Bill"}</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* View modal */}
       {viewBill && (
         <Modal title={`Bill #${billNo(viewBill)}`} onClose={() => setViewBill(null)} wide>
           <Invoice bill={viewBill} />
@@ -1724,7 +2031,11 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
           </div>
         </Modal>
       )}
+
+      {/* Print-only invoice */}
       {viewBill && <div className="print-only"><Invoice bill={viewBill} printMode /></div>}
+
+      {/* Delete confirm */}
       {confirmId && <Confirm msg="Delete this bill?" loading={deleting} onOk={() => del(confirmId)} onCancel={() => setConfirmId(null)} />}
     </div>
   );
