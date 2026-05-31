@@ -559,6 +559,8 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
     })
     .sort((a, b) => b.pct - a.pct);
 
+
+
   // Month-level revenue summary for selected date's month
   const monthStr = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, "0")}`;
   const monthAppts = appointments.filter(a => a.date.startsWith(monthStr) && a.status === "completed");
@@ -568,6 +570,34 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
 
   const rankColors = ["#f59e0b", "#94a3b8", "#cd7c54", "#7c6fa0", "#7c6fa0"];
   const rankEmojis = ["🥇", "🥈", "🥉"];
+  const monthStaffPerformance = employees
+  .filter(e => e.status === "active")
+  .map(emp => {
+    const empAppts = monthAppts.filter(
+      a => a.employee_id === emp.id
+    );
+
+    const revenue = empAppts.reduce((sum, a) => {
+      const svc = getService(a.service_id);
+      return sum + (svc ? Number(svc.price) : 0);
+    }, 0);
+
+    const salary = Number(emp.salary || 0);
+    const target = salary * 2;
+
+    return {
+      ...emp,
+      revenue,
+      target,
+      pct:
+        target > 0
+          ? Math.min((revenue / target) * 100, 150)
+          : 0,
+      completed: empAppts.length,
+      achieved: revenue >= target
+    };
+  })
+  .sort((a, b) => b.revenue - a.revenue);
 
   return (
     <div className="fade-up">
@@ -647,7 +677,7 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
       </div>
 
       {/* ── Calendar + Performance ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: "1.25rem", alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr 1fr", gap: "1.25rem", alignItems: "start" }}>
 
         {/* Calendar */}
         <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
@@ -709,7 +739,7 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
         <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
           <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h4 style={{ margin: 0, fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>
-              Staff Performance — {selectedDate}
+              Daily Performance — {selectedDate}
             </h4>
             <div style={{ display: "flex", gap: 14, fontSize: ".73rem", color: "var(--muted)" }}>
               <span>Target = 2× Salary</span>
@@ -823,6 +853,118 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
               </div>
           }
         </div>
+       <div
+  style={{
+    background: "var(--card)",
+    border: "1px solid var(--border)",
+    borderRadius: 14,
+    overflow: "hidden"
+  }}
+>
+  <div
+    style={{
+      padding: "1rem 1.25rem",
+      borderBottom: "1px solid var(--border)",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }}
+  >
+    <h4
+      style={{
+        margin: 0,
+        fontSize: ".82rem",
+        fontWeight: 700,
+        color: "var(--muted)",
+        textTransform: "uppercase",
+        letterSpacing: ".06em"
+      }}
+    >
+      Monthly Ranking — {monthNames[calMonth.month]}
+    </h4>
+
+    <span
+      style={{
+        fontSize: ".75rem",
+        color: "var(--accent)",
+        fontWeight: 700
+      }}
+    >
+      {fmt(monthRevenue)}
+    </span>
+  </div>
+
+  <div style={{ padding: "1rem" }}>
+    {monthStaffPerformance.map((emp, idx) => (
+      <div
+        key={emp.id}
+        style={{
+          padding: ".9rem",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          marginBottom: ".75rem"
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between"
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontWeight: 700
+              }}
+            >
+              {idx === 0
+                ? "🥇"
+                : idx === 1
+                ? "🥈"
+                : idx === 2
+                ? "🥉"
+                : `#${idx + 1}`}{" "}
+              {emp.name}
+            </div>
+
+            <div
+              style={{
+                fontSize: ".75rem",
+                color: "var(--muted)"
+              }}
+            >
+              {emp.completed} completed services
+            </div>
+          </div>
+
+          <div
+            style={{
+              textAlign: "right"
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 800,
+                color: "var(--accent)"
+              }}
+            >
+              {fmt(emp.revenue)}
+            </div>
+
+            <div
+              style={{
+                fontSize: ".7rem",
+                color: "var(--muted)"
+              }}
+            >
+              {emp.pct.toFixed(0)}%
+            </div>
+          </div>
+        </div>
+      </div>
+    ))}
+  </div>
+</div>
       </div>
     </div>
   );
