@@ -206,9 +206,6 @@ function Page({ children, visible }) {
 function BrandMark() {
   return (
     <div style={{ textAlign: "center", marginBottom: "2rem" }}>
-      <div style={{ width: 60, height: 60, borderRadius: 16, background: "var(--accent)", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: "1rem", boxShadow: "0 0 40px rgba(192,132,252,.3)" }}>
-        <Icon d={I.scissors} size={26} />
-      </div>
       <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "2rem", fontWeight: 800, color: "var(--text)" }}>Naturals Narasannpeta</div>
       <div style={{ color: "var(--muted)", fontSize: ".85rem", marginTop: 2 }}>Salon Management System</div>
     </div>
@@ -363,9 +360,6 @@ function StaffDashboard({ employees, customers, services, appointments, profile 
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.6rem", color: "var(--text)", marginBottom: 4 }}>
-            Staff Dashboard
-          </h2>
           <p style={{ color: "var(--muted)", fontSize: ".85rem" }}>Daily appointments & sales performance</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -612,7 +606,6 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
     <div className="fade-up">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.6rem", color: "var(--text)", marginBottom: 4 }}>Owner Dashboard</h2>
           <p style={{ color: "var(--muted)", fontSize: ".85rem" }}>Staff & customer overview · Performance rankings</p>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -1018,7 +1011,6 @@ function Employees({ employees, reload, isAdmin }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 12 }}>
-        <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.6rem", margin: 0, color: "var(--text)" }}>Employees</h2>
         <div style={{ display: "flex", gap: 10 }}>
           <input placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...IS, width: 200 }} />
           {isAdmin && <Btn onClick={openAdd}><Icon d={I.add} size={15} /> Add</Btn>}
@@ -1156,7 +1148,7 @@ function Customers({ customers, reload, isAdmin }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 12 }}>
-        <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.6rem", margin: 0, color: "var(--text)" }}>Customers</h2>
+        
         <div style={{ display: "flex", gap: 10 }}>
           <input placeholder="Search name / phone…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...IS, width: 210 }} />
           <Btn onClick={openAdd}><Icon d={I.add} size={15} /> Add</Btn>
@@ -1305,7 +1297,6 @@ function Services({ services, reload, isAdmin }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: 12 }}>
-        <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.6rem", margin: 0, color: "var(--text)" }}>Services</h2>
         <div style={{ display: "flex", gap: 10 }}>
           <input placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...IS, width: 180 }} />
           {isAdmin && <Btn onClick={openAdd}><Icon d={I.add} size={15} /> Add</Btn>}
@@ -1439,7 +1430,6 @@ function Appointments({ appointments, reload, employees, customers, services, is
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: 12 }}>
-        <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.6rem", margin: 0, color: "var(--text)" }}>Appointments</h2>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <input placeholder="Search customer / staff…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...IS, width: 220 }} />
           <Btn onClick={openAdd}><Icon d={I.add} size={15} /> Add</Btn>
@@ -1936,7 +1926,6 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
     <div>
       {/* Toolbar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: 12 }}>
-        <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.6rem", margin: 0, color: "var(--text)" }}>Billing</h2>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} style={{ ...IS, width: 165 }} />
           <input placeholder="Search bill / customer..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...IS, width: 220 }} />
