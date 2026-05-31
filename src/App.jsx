@@ -741,22 +741,12 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
             <h4 style={{ margin: 0, fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>
               Daily Performance — {selectedDate}
             </h4>
-            <div style={{ display: "flex", gap: 14, fontSize: ".73rem", color: "var(--muted)" }}>
-              <span>Target = 2× Salary</span>
-              <span style={{ color: "#f59e0b" }}>Bonus: ₹2,500</span>
-            </div>
           </div>
 
           {staffPerformance.length === 0
             ? <div style={{ padding: "2.5rem", textAlign: "center", color: "var(--muted)", fontSize: ".88rem" }}>No active staff found.</div>
             : <div style={{ padding: "1rem" }}>
                 {/* Legend */}
-                <div style={{ display: "flex", gap: 16, marginBottom: "1rem", fontSize: ".73rem", color: "var(--muted)" }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 10, height: 10, borderRadius: 2, background: "var(--accent)" }} /> Revenue</span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(245,158,11,.5)", border: "1px dashed #f59e0b" }} /> Target (2× Salary)</span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(52,211,153,.3)" }} /> Bonus unlocked</span>
-                </div>
-
                 {staffPerformance.map((emp, idx) => (
                   <div key={emp.id} style={{
                     background: emp.achieved ? "rgba(52,211,153,.04)" : "var(--bg)",
@@ -782,49 +772,8 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
                         <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.1rem", fontWeight: 800, color: emp.achieved ? "#34d399" : "var(--text)" }}>
                           {fmt(emp.revenue)}
                         </div>
-                        {emp.salary > 0 && (
-                          <div style={{ fontSize: ".72rem", color: "var(--muted)" }}>
-                            Target: {fmt(emp.target)}
-                          </div>
-                        )}
-                        {emp.achieved && (
-                          <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end", marginTop: 3, fontSize: ".72rem", color: "#f59e0b", fontWeight: 700 }}>
-                            <Icon d={I.gift} size={12} /> +₹2,500 Bonus!
-                          </div>
-                        )}
                       </div>
-                    </div>
-
-                    {/* Progress bar */}
-                    <div style={{ position: "relative" }}>
-                      <div style={{ background: "var(--border)", borderRadius: 99, height: 10, overflow: "hidden", position: "relative" }}>
-                        {/* Target line */}
-                        {emp.target > 0 && (
-                          <div style={{
-                            position: "absolute", left: "66.67%", top: 0, bottom: 0, width: 2,
-                            background: "rgba(245,158,11,.8)", zIndex: 2
-                          }} />
-                        )}
-                        {/* Revenue bar */}
-                        <div style={{
-                          width: `${Math.min(emp.pct * (2/3), 100)}%`, // scale so 100% target = 66.67% bar width
-                          height: "100%",
-                          background: emp.achieved
-                            ? "linear-gradient(90deg,#34d399,#10b981)"
-                            : "linear-gradient(90deg,var(--accent),#818cf8)",
-                          borderRadius: 99, transition: "width .5s ease",
-                        }} />
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, fontSize: ".7rem", color: "var(--muted)" }}>
-                        <span>{emp.pct.toFixed(0)}% of target achieved</span>
-                        {emp.salary > 0
-                          ? emp.achieved
-                            ? <span style={{ color: "#34d399", fontWeight: 700 }}>✓ Target met!</span>
-                            : <span>{fmt(Math.max(emp.target - emp.revenue, 0))} to go</span>
-                          : <span style={{ color: "#f59e0b" }}>No salary set — targets unavailable</span>
-                        }
-                      </div>
-                    </div>
+                    </div>                  
                   </div>
                 ))}
 
@@ -837,12 +786,6 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
                   <div style={{ flex: 1, minWidth: 100 }}>
                     <div style={{ fontSize: ".7rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Appointments</div>
                     <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.1rem", fontWeight: 800, color: "var(--text)" }}>{dayAppts.length}</div>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 100 }}>
-                    <div style={{ fontSize: ".7rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Bonuses Unlocked</div>
-                    <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.1rem", fontWeight: 800, color: "#f59e0b" }}>
-                      {staffPerformance.filter(e => e.achieved).length} / {staffPerformance.length}
-                    </div>
                   </div>
                   <div style={{ flex: 1, minWidth: 100 }}>
                     <div style={{ fontSize: ".7rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Month Revenue</div>
