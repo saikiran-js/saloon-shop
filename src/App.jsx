@@ -43,6 +43,13 @@ const I = {
   check:    "M20 6L9 17l-5-5",
   spinner:  "M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83",
   alert:    "M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01",
+  trophy:   "M8.21 13.89L7 23l5-3 5 3-1.21-9.12M15 7a3 3 0 11-6 0 3 3 0 016 0zM3 6h2l1 4h12l1-4h2",
+  coin:     "M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+  target:   "M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM12 18a6 6 0 100-12 6 6 0 000 12zM12 14a2 2 0 100-4 2 2 0 000 4z",
+  calendar: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z",
+  star:     "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
+  gift:     "M20 12v10H4V12M22 7H2v5h20V7zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z",
+  trend:    "M23 6l-9.5 9.5-5-5L1 18M17 6h6v6",
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -61,6 +68,10 @@ const CSS = `
   option { background: var(--card); }
   @keyframes spin { to { transform: rotate(360deg); } }
   .spin { animation: spin 1s linear infinite; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+  .fade-up { animation: fadeUp .35s ease both; }
+  @keyframes shimmer { 0%,100% { opacity:.6; } 50% { opacity:1; } }
+  .shimmer { animation: shimmer 2s ease infinite; }
 `;
 
 // ─────────────────────────────────────────────────────────────
@@ -116,10 +127,13 @@ function Badge({ status }) {
   return <span style={{ fontSize: ".75rem", fontWeight: 700, padding: "3px 10px", borderRadius: 99, background: c.bg, color: c.text, textTransform: "capitalize" }}>{status}</span>;
 }
 
-function StatCard({ label, value, sub, accent }) {
+function StatCard({ label, value, sub, accent, icon }) {
   return (
     <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: "1.25rem 1.5rem", borderTop: `3px solid ${accent}` }}>
-      <div style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--text)", fontFamily: "'Playfair Display',serif" }}>{value}</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+        <div style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--text)", fontFamily: "'Playfair Display',serif" }}>{value}</div>
+        {icon && <div style={{ color: accent, opacity: .7 }}><Icon d={icon} size={20} /></div>}
+      </div>
       <div style={{ fontWeight: 700, color: "var(--text)", marginTop: 2, fontSize: ".9rem" }}>{label}</div>
       {sub && <div style={{ color: "var(--muted)", fontSize: ".78rem", marginTop: 4 }}>{sub}</div>}
     </div>
@@ -132,10 +146,6 @@ function ErrBox({ msg }) {
       <Icon d={I.alert} size={15} /> {msg}
     </div>
   );
-}
-
-function Spinner({ size = 20 }) {
-  return <Icon d={I.spinner} size={size} cls="spin" />;
 }
 
 function Loading({ msg = "Loading…" }) {
@@ -210,7 +220,6 @@ function LoginPage({ onForgot }) {
     setLoading(true); setError("");
     const { error: err } = await supabase.auth.signInWithPassword({ email, password });
     if (err) { setError(err.message); setLoading(false); }
-    // on success, onAuthStateChange in App will fire automatically
   };
 
   return (
@@ -259,9 +268,7 @@ function ForgotPage({ onBack }) {
   const handleReset = async () => {
     if (!email) { setError("Enter your email."); return; }
     setLoading(true); setError("");
-    const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin,
-    });
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
     setLoading(false);
     if (err) setError(err.message);
     else setSent(true);
@@ -274,7 +281,6 @@ function ForgotPage({ onBack }) {
         <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: ".82rem", fontWeight: 600, display: "flex", alignItems: "center", gap: 6, marginBottom: "1.25rem", padding: 0 }}>
           <Icon d={I.back} size={14} /> Back to login
         </button>
-
         {!sent ? <>
           <h2 style={{ margin: "0 0 .25rem", fontSize: "1.1rem", fontWeight: 800, color: "var(--text)" }}>Reset your password</h2>
           <p style={{ color: "var(--muted)", fontSize: ".85rem", marginBottom: "1.5rem" }}>Enter your email and we'll send a reset link.</p>
@@ -284,9 +290,7 @@ function ForgotPage({ onBack }) {
               onKeyDown={e => e.key === "Enter" && handleReset()} />
           </Field>
           {error && <ErrBox msg={error} />}
-          <Btn full onClick={handleReset} disabled={loading}>
-            {loading ? "Sending…" : "Send Reset Link →"}
-          </Btn>
+          <Btn full onClick={handleReset} disabled={loading}>{loading ? "Sending…" : "Send Reset Link →"}</Btn>
         </> : <>
           <div style={{ textAlign: "center", padding: "1rem 0" }}>
             <div style={{ width: 56, height: 56, borderRadius: "50%", background: "rgba(52,211,153,.15)", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: "1rem" }}>
@@ -305,7 +309,527 @@ function ForgotPage({ onBack }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// DASHBOARD
+// STAFF DASHBOARD — Daily appointments + sales performance
+// ─────────────────────────────────────────────────────────────
+function StaffDashboard({ employees, customers, services, appointments, profile }) {
+  const [selectedDate, setSelectedDate] = useState(today());
+
+  const getName = (list, id) => list.find(x => x.id === id)?.name || "—";
+  const getService = (id) => services.find(s => s.id === id);
+
+  // Appointments for selected date
+  const dayAppts = appointments
+    .filter(a => a.date === selectedDate)
+    .sort((a, b) => a.time > b.time ? 1 : -1);
+
+  // If staff (not admin), filter to their own appointments
+  const myAppts = profile?.is_admin
+    ? dayAppts
+    : dayAppts.filter(a => {
+        const emp = employees.find(e => e.email === profile?.email || e.id === a.employee_id);
+        return emp ? a.employee_id === emp?.id : true;
+      });
+
+  // Sales performance for the day
+  const completedToday = myAppts.filter(a => a.status === "completed");
+  const totalRevenue   = completedToday.reduce((sum, a) => {
+    const svc = getService(a.service_id);
+    return sum + (svc ? Number(svc.price) : 0);
+  }, 0);
+  const pendingCount   = myAppts.filter(a => a.status === "pending" || a.status === "confirmed").length;
+  const cancelledCount = myAppts.filter(a => a.status === "cancelled").length;
+
+  // Revenue by hour for a mini bar chart
+  const hourBuckets = {};
+  completedToday.forEach(a => {
+    const hr = a.time ? a.time.slice(0, 2) : "00";
+    const price = getService(a.service_id)?.price || 0;
+    hourBuckets[hr] = (hourBuckets[hr] || 0) + Number(price);
+  });
+  const hours = Object.keys(hourBuckets).sort();
+  const maxHourRev = Math.max(...Object.values(hourBuckets), 1);
+
+  return (
+    <div className="fade-up">
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.6rem", color: "var(--text)", marginBottom: 4 }}>
+            Staff Dashboard
+          </h2>
+          <p style={{ color: "var(--muted)", fontSize: ".85rem" }}>Daily appointments & sales performance</p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Icon d={I.calendar} size={16} style={{ color: "var(--muted)" }} />
+          <input type="date" value={selectedDate}
+            onChange={e => setSelectedDate(e.target.value)}
+            style={{ ...IS, width: 180 }} />
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(175px,1fr))", gap: "1rem", marginBottom: "1.75rem" }}>
+        <StatCard label="Total Appointments" value={myAppts.length} sub={`on ${selectedDate}`} accent="#a78bfa" icon={I.appt} />
+        <StatCard label="Completed" value={completedToday.length} sub="services done" accent="#34d399" icon={I.check} />
+        <StatCard label="Pending / Upcoming" value={pendingCount} sub="yet to complete" accent="#f59e0b" icon={I.spinner} />
+        <StatCard label="Revenue Today" value={fmt(totalRevenue)} sub={`${cancelledCount} cancelled`} accent="#60a5fa" icon={I.coin} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "1.25rem", alignItems: "start" }}>
+
+        {/* Appointments list */}
+        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h4 style={{ margin: 0, fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+              Appointments — {selectedDate}
+            </h4>
+            <span style={{ fontSize: ".75rem", color: "var(--accent)", fontWeight: 700 }}>{myAppts.length} total</span>
+          </div>
+          {myAppts.length === 0
+            ? <div style={{ padding: "2.5rem", textAlign: "center", color: "var(--muted)", fontSize: ".88rem" }}>No appointments for this day.</div>
+            : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
+                <thead>
+                  <tr style={{ background: "var(--bg)" }}>
+                    {["Time", "Customer", "Service", "Staff", "Amount", "Status"].map(h => (
+                      <th key={h} style={{ textAlign: "left", padding: "9px 14px", color: "var(--muted)", fontWeight: 600, fontSize: ".73rem", textTransform: "uppercase", letterSpacing: ".05em", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {myAppts.map(a => {
+                    const svc = getService(a.service_id);
+                    return (
+                      <tr key={a.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                        <td style={{ padding: "11px 14px", fontWeight: 700, color: "var(--accent)", whiteSpace: "nowrap" }}>{a.time}</td>
+                        <td style={{ padding: "11px 14px", fontWeight: 600, color: "var(--text)" }}>{getName(customers, a.customer_id)}</td>
+                        <td style={{ padding: "11px 14px", color: "var(--muted)" }}>{svc?.name || "—"}</td>
+                        <td style={{ padding: "11px 14px", color: "var(--muted)" }}>{getName(employees, a.employee_id)}</td>
+                        <td style={{ padding: "11px 14px", fontWeight: 700, color: a.status === "completed" ? "#34d399" : "var(--muted)" }}>
+                          {a.status === "completed" ? fmt(svc?.price || 0) : "—"}
+                        </td>
+                        <td style={{ padding: "11px 14px" }}><Badge status={a.status} /></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+          }
+        </div>
+
+        {/* Sales performance panel */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+
+          {/* Revenue breakdown */}
+          <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: "1.25rem" }}>
+            <h4 style={{ margin: "0 0 1rem", fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Revenue by Hour</h4>
+            {hours.length === 0
+              ? <div style={{ color: "var(--muted)", fontSize: ".82rem", textAlign: "center", padding: "1rem 0" }}>No completed sales yet.</div>
+              : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {hours.map(hr => (
+                    <div key={hr} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ fontSize: ".78rem", color: "var(--muted)", width: 38, textAlign: "right", flexShrink: 0 }}>{hr}:00</div>
+                      <div style={{ flex: 1, background: "var(--bg)", borderRadius: 99, height: 8, overflow: "hidden" }}>
+                        <div style={{ width: `${(hourBuckets[hr] / maxHourRev) * 100}%`, height: "100%", background: "var(--accent)", borderRadius: 99, transition: "width .4s" }} />
+                      </div>
+                      <div style={{ fontSize: ".78rem", color: "var(--accent)", fontWeight: 700, width: 70, textAlign: "right", flexShrink: 0 }}>{fmt(hourBuckets[hr])}</div>
+                    </div>
+                  ))}
+                </div>
+            }
+          </div>
+
+          {/* Service breakdown */}
+          <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: "1.25rem" }}>
+            <h4 style={{ margin: "0 0 1rem", fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Services Done Today</h4>
+            {completedToday.length === 0
+              ? <div style={{ color: "var(--muted)", fontSize: ".82rem", textAlign: "center", padding: ".5rem 0" }}>None yet.</div>
+              : (() => {
+                  const svcCounts = {};
+                  completedToday.forEach(a => {
+                    const name = getService(a.service_id)?.name || "Unknown";
+                    const price = getService(a.service_id)?.price || 0;
+                    if (!svcCounts[name]) svcCounts[name] = { count: 0, rev: 0 };
+                    svcCounts[name].count++;
+                    svcCounts[name].rev += Number(price);
+                  });
+                  return Object.entries(svcCounts)
+                    .sort((a, b) => b[1].rev - a[1].rev)
+                    .map(([name, data]) => (
+                      <div key={name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid var(--border)" }}>
+                        <div>
+                          <div style={{ fontSize: ".85rem", fontWeight: 600, color: "var(--text)" }}>{name}</div>
+                          <div style={{ fontSize: ".73rem", color: "var(--muted)" }}>×{data.count} times</div>
+                        </div>
+                        <div style={{ fontSize: ".88rem", fontWeight: 700, color: "#34d399" }}>{fmt(data.rev)}</div>
+                      </div>
+                    ));
+                })()
+            }
+            {completedToday.length > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingTop: 10 }}>
+                <span style={{ fontSize: ".82rem", fontWeight: 700, color: "var(--muted)" }}>Total</span>
+                <span style={{ fontSize: "1rem", fontWeight: 800, color: "var(--accent)", fontFamily: "'Playfair Display',serif" }}>{fmt(totalRevenue)}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Status summary */}
+          <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: "1.25rem" }}>
+            <h4 style={{ margin: "0 0 .875rem", fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Status Summary</h4>
+            {["completed", "confirmed", "pending", "cancelled"].map(s => {
+              const cnt = myAppts.filter(a => a.status === s).length;
+              return (
+                <div key={s} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7 }}>
+                  <Badge status={s} />
+                  <span style={{ fontSize: ".85rem", fontWeight: 700, color: cnt > 0 ? "var(--text)" : "var(--muted)" }}>{cnt}</span>
+                </div>
+              );
+            })}
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// OWNER DASHBOARD — Staff, Customers, Calendar + Performance
+// ─────────────────────────────────────────────────────────────
+function OwnerDashboard({ employees, customers, services, appointments }) {
+  const [selectedDate, setSelectedDate] = useState(today());
+  const [calMonth, setCalMonth] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+
+  const getName = (list, id) => list.find(x => x.id === id)?.name || "—";
+  const getService = (id) => services.find(s => s.id === id);
+
+  // Calendar helpers
+  const daysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
+  const firstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
+  const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+  const prevMonth = () => setCalMonth(p => {
+    const m = p.month === 0 ? 11 : p.month - 1;
+    const y = p.month === 0 ? p.year - 1 : p.year;
+    return { year: y, month: m };
+  });
+  const nextMonth = () => setCalMonth(p => {
+    const m = p.month === 11 ? 0 : p.month + 1;
+    const y = p.month === 11 ? p.year + 1 : p.year;
+    return { year: y, month: m };
+  });
+
+  // Get appointments per day for dot indicators
+  const apptsByDate = {};
+  appointments.forEach(a => {
+    if (!apptsByDate[a.date]) apptsByDate[a.date] = 0;
+    apptsByDate[a.date]++;
+  });
+
+  // Staff performance for selected date
+  const dayAppts = appointments.filter(a => a.date === selectedDate);
+
+  const staffPerformance = employees
+    .filter(e => e.status === "active")
+    .map(emp => {
+      const empAppts = dayAppts.filter(a => a.employee_id === emp.id);
+      const completed = empAppts.filter(a => a.status === "completed");
+      const revenue = completed.reduce((sum, a) => {
+        const svc = getService(a.service_id);
+        return sum + (svc ? Number(svc.price) : 0);
+      }, 0);
+      const salary = Number(emp.salary || 0);
+      const target = salary * 2; // target = 2x salary
+      const pct    = target > 0 ? Math.min((revenue / target) * 100, 150) : 0;
+      const bonus  = revenue >= target ? 2500 : 0;
+      return {
+        ...emp,
+        appts:     empAppts.length,
+        completed: completed.length,
+        revenue,
+        salary,
+        target,
+        pct,
+        bonus,
+        achieved:  revenue >= target,
+      };
+    })
+    .sort((a, b) => b.pct - a.pct);
+
+  // Month-level revenue summary for selected date's month
+  const monthStr = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, "0")}`;
+  const monthAppts = appointments.filter(a => a.date.startsWith(monthStr) && a.status === "completed");
+  const monthRevenue = monthAppts.reduce((s, a) => s + (Number(getService(a.service_id)?.price) || 0), 0);
+
+  const totalDayRevenue = staffPerformance.reduce((s, e) => s + e.revenue, 0);
+
+  const rankColors = ["#f59e0b", "#94a3b8", "#cd7c54", "#7c6fa0", "#7c6fa0"];
+  const rankEmojis = ["🥇", "🥈", "🥉"];
+
+  return (
+    <div className="fade-up">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.6rem", color: "var(--text)", marginBottom: 4 }}>Owner Dashboard</h2>
+          <p style={{ color: "var(--muted)", fontSize: ".85rem" }}>Staff & customer overview · Performance rankings</p>
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ background: "rgba(192,132,252,.1)", border: "1px solid rgba(192,132,252,.25)", borderRadius: 10, padding: "6px 14px", fontSize: ".82rem", color: "var(--accent)", fontWeight: 700 }}>
+            <Icon d={I.shield} size={12} style={{ display: "inline", verticalAlign: "middle" }} /> Owner View
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem", marginBottom: "1.25rem" }}>
+
+        {/* ── Employee List ── */}
+        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h4 style={{ margin: 0, fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+              <span style={{ color: "#a78bfa", marginRight: 6 }}>●</span>Staff Members
+            </h4>
+            <span style={{ fontSize: ".75rem", color: "var(--muted)" }}>{employees.filter(e => e.status === "active").length} active</span>
+          </div>
+          <div style={{ maxHeight: 300, overflowY: "auto" }}>
+            {employees.length === 0
+              ? <div style={{ padding: "1.5rem", color: "var(--muted)", fontSize: ".85rem", textAlign: "center" }}>No employees found.</div>
+              : employees.map(emp => (
+                <div key={emp.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 1.25rem", borderBottom: "1px solid var(--border)" }}>
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(192,132,252,.15)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display',serif", fontWeight: 700, color: "var(--accent)", flexShrink: 0 }}>
+                    {emp.name.charAt(0)}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: ".88rem", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{emp.name}</div>
+                    <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>{emp.role || "Staff"}</div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    {emp.salary && <div style={{ fontSize: ".78rem", color: "var(--muted)", fontWeight: 600 }}>{fmt(emp.salary)}/mo</div>}
+                    <span style={{ fontSize: ".7rem", fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: emp.status === "active" ? "rgba(52,211,153,.15)" : "rgba(156,163,175,.15)", color: emp.status === "active" ? "#34d399" : "#9ca3af" }}>{emp.status}</span>
+                  </div>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+
+        {/* ── Customer List ── */}
+        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h4 style={{ margin: 0, fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+              <span style={{ color: "#34d399", marginRight: 6 }}>●</span>Customers
+            </h4>
+            <span style={{ fontSize: ".75rem", color: "var(--muted)" }}>{customers.length} registered</span>
+          </div>
+          <div style={{ maxHeight: 300, overflowY: "auto" }}>
+            {customers.length === 0
+              ? <div style={{ padding: "1.5rem", color: "var(--muted)", fontSize: ".85rem", textAlign: "center" }}>No customers yet.</div>
+              : customers.map(c => (
+                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 1.25rem", borderBottom: "1px solid var(--border)" }}>
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(52,211,153,.12)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display',serif", fontWeight: 700, color: "#34d399", flexShrink: 0 }}>
+                    {c.name.charAt(0)}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: ".88rem", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
+                    <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>{c.phone || c.email || "—"}</div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: ".78rem", fontWeight: 700, color: "var(--accent)" }}>{c.visits || 0} visits</div>
+                    {c.last_visit && <div style={{ fontSize: ".7rem", color: "var(--muted)" }}>{c.last_visit}</div>}
+                  </div>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </div>
+
+      {/* ── Calendar + Performance ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: "1.25rem", alignItems: "start" }}>
+
+        {/* Calendar */}
+        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <button onClick={prevMonth} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex" }}>
+              <Icon d="M15 18l-6-6 6-6" size={16} />
+            </button>
+            <h4 style={{ margin: 0, fontSize: ".88rem", fontWeight: 700, color: "var(--text)" }}>
+              {monthNames[calMonth.month]} {calMonth.year}
+            </h4>
+            <button onClick={nextMonth} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex" }}>
+              <Icon d="M9 18l6-6-6-6" size={16} />
+            </button>
+          </div>
+          <div style={{ padding: "1rem" }}>
+            {/* Day headers */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", marginBottom: 6 }}>
+              {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d => (
+                <div key={d} style={{ textAlign: "center", fontSize: ".68rem", fontWeight: 700, color: "var(--muted)", padding: "2px 0" }}>{d}</div>
+              ))}
+            </div>
+            {/* Day cells */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2 }}>
+              {Array(firstDayOfMonth(calMonth.year, calMonth.month)).fill(null).map((_, i) => (
+                <div key={`e${i}`} />
+              ))}
+              {Array(daysInMonth(calMonth.year, calMonth.month)).fill(null).map((_, i) => {
+                const day = i + 1;
+                const dateStr = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                const isSelected = dateStr === selectedDate;
+                const isToday    = dateStr === today();
+                const hasAppts   = apptsByDate[dateStr] > 0;
+                return (
+                  <button key={day} onClick={() => setSelectedDate(dateStr)}
+                    style={{
+                      position: "relative", width: "100%", aspectRatio: "1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                      borderRadius: 8, border: isToday ? "1px solid var(--accent)" : "1px solid transparent",
+                      background: isSelected ? "var(--accent)" : "none",
+                      color: isSelected ? "var(--bg)" : isToday ? "var(--accent)" : "var(--text)",
+                      cursor: "pointer", fontWeight: isToday || isSelected ? 700 : 500, fontSize: ".82rem",
+                    }}>
+                    {day}
+                    {hasAppts && !isSelected && (
+                      <div style={{ position: "absolute", bottom: 3, width: 4, height: 4, borderRadius: "50%", background: "var(--accent)" }} />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{ padding: "0 1rem 1rem", borderTop: "1px solid var(--border)", paddingTop: "0.875rem", marginTop: "-1px" }}>
+            <div style={{ fontSize: ".75rem", color: "var(--muted)", marginBottom: 4 }}>Selected: <strong style={{ color: "var(--text)" }}>{selectedDate}</strong></div>
+            <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>Month revenue: <strong style={{ color: "var(--accent)" }}>{fmt(monthRevenue)}</strong></div>
+            <div style={{ fontSize: ".75rem", color: "var(--muted)", marginTop: 2 }}>Day total: <strong style={{ color: "#34d399" }}>{fmt(totalDayRevenue)}</strong></div>
+          </div>
+        </div>
+
+        {/* Staff performance ranking */}
+        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h4 style={{ margin: 0, fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+              Staff Performance — {selectedDate}
+            </h4>
+            <div style={{ display: "flex", gap: 14, fontSize: ".73rem", color: "var(--muted)" }}>
+              <span>Target = 2× Salary</span>
+              <span style={{ color: "#f59e0b" }}>Bonus: ₹2,500</span>
+            </div>
+          </div>
+
+          {staffPerformance.length === 0
+            ? <div style={{ padding: "2.5rem", textAlign: "center", color: "var(--muted)", fontSize: ".88rem" }}>No active staff found.</div>
+            : <div style={{ padding: "1rem" }}>
+                {/* Legend */}
+                <div style={{ display: "flex", gap: 16, marginBottom: "1rem", fontSize: ".73rem", color: "var(--muted)" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 10, height: 10, borderRadius: 2, background: "var(--accent)" }} /> Revenue</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(245,158,11,.5)", border: "1px dashed #f59e0b" }} /> Target (2× Salary)</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(52,211,153,.3)" }} /> Bonus unlocked</span>
+                </div>
+
+                {staffPerformance.map((emp, idx) => (
+                  <div key={emp.id} style={{
+                    background: emp.achieved ? "rgba(52,211,153,.04)" : "var(--bg)",
+                    border: `1px solid ${emp.achieved ? "rgba(52,211,153,.2)" : "var(--border)"}`,
+                    borderRadius: 12, padding: "1rem", marginBottom: "0.75rem"
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        {/* Rank badge */}
+                        <div style={{
+                          width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                          background: `rgba(${idx === 0 ? "245,158,11" : idx === 1 ? "148,163,184" : idx === 2 ? "205,124,84" : "124,111,160"},.2)`,
+                          color: rankColors[idx] || rankColors[4], fontWeight: 800, fontSize: ".82rem", flexShrink: 0
+                        }}>
+                          {idx < 3 ? rankEmojis[idx] : idx + 1}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: ".92rem", color: "var(--text)" }}>{emp.name}</div>
+                          <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>{emp.role || "Staff"} · {emp.completed} completed · {emp.appts} total appts</div>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.1rem", fontWeight: 800, color: emp.achieved ? "#34d399" : "var(--text)" }}>
+                          {fmt(emp.revenue)}
+                        </div>
+                        {emp.salary > 0 && (
+                          <div style={{ fontSize: ".72rem", color: "var(--muted)" }}>
+                            Target: {fmt(emp.target)}
+                          </div>
+                        )}
+                        {emp.achieved && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end", marginTop: 3, fontSize: ".72rem", color: "#f59e0b", fontWeight: 700 }}>
+                            <Icon d={I.gift} size={12} /> +₹2,500 Bonus!
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div style={{ position: "relative" }}>
+                      <div style={{ background: "var(--border)", borderRadius: 99, height: 10, overflow: "hidden", position: "relative" }}>
+                        {/* Target line */}
+                        {emp.target > 0 && (
+                          <div style={{
+                            position: "absolute", left: "66.67%", top: 0, bottom: 0, width: 2,
+                            background: "rgba(245,158,11,.8)", zIndex: 2
+                          }} />
+                        )}
+                        {/* Revenue bar */}
+                        <div style={{
+                          width: `${Math.min(emp.pct * (2/3), 100)}%`, // scale so 100% target = 66.67% bar width
+                          height: "100%",
+                          background: emp.achieved
+                            ? "linear-gradient(90deg,#34d399,#10b981)"
+                            : "linear-gradient(90deg,var(--accent),#818cf8)",
+                          borderRadius: 99, transition: "width .5s ease",
+                        }} />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, fontSize: ".7rem", color: "var(--muted)" }}>
+                        <span>{emp.pct.toFixed(0)}% of target achieved</span>
+                        {emp.salary > 0
+                          ? emp.achieved
+                            ? <span style={{ color: "#34d399", fontWeight: 700 }}>✓ Target met!</span>
+                            : <span>{fmt(Math.max(emp.target - emp.revenue, 0))} to go</span>
+                          : <span style={{ color: "#f59e0b" }}>No salary set — targets unavailable</span>
+                        }
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Day summary */}
+                <div style={{ display: "flex", gap: "1rem", marginTop: "0.5rem", padding: "0.875rem 1rem", background: "var(--border)", borderRadius: 10, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 100 }}>
+                    <div style={{ fontSize: ".7rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Day Revenue</div>
+                    <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.1rem", fontWeight: 800, color: "#34d399" }}>{fmt(totalDayRevenue)}</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 100 }}>
+                    <div style={{ fontSize: ".7rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Appointments</div>
+                    <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.1rem", fontWeight: 800, color: "var(--text)" }}>{dayAppts.length}</div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 100 }}>
+                    <div style={{ fontSize: ".7rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Bonuses Unlocked</div>
+                    <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.1rem", fontWeight: 800, color: "#f59e0b" }}>
+                      {staffPerformance.filter(e => e.achieved).length} / {staffPerformance.length}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 100 }}>
+                    <div style={{ fontSize: ".7rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Month Revenue</div>
+                    <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.1rem", fontWeight: 800, color: "var(--accent)" }}>{fmt(monthRevenue)}</div>
+                  </div>
+                </div>
+
+              </div>
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// LEGACY DASHBOARD (generic overview — kept for non-dashboard tabs)
 // ─────────────────────────────────────────────────────────────
 function Dashboard({ employees, customers, services, appointments }) {
   const active      = services.filter(s => s.is_active);
@@ -316,69 +840,34 @@ function Dashboard({ employees, customers, services, appointments }) {
     .filter(a => a.date >= today() && a.status !== "cancelled")
     .sort((a, b) => (a.date + a.time) > (b.date + b.time) ? 1 : -1)
     .slice(0, 6);
-
   const getName = (list, id) => list.find(x => x.id === id)?.name || "—";
 
   return (
     <div>
-      <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.6rem", marginBottom: "1.5rem", color: "var(--text)" }}>Dashboard</h2>
+      <h2 style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.6rem", marginBottom: "1.5rem", color: "var(--text)" }}>Overview</h2>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: "1rem", marginBottom: "2rem" }}>
         <StatCard label="Employees"     value={employees.length}   sub={`${employees.filter(e => e.status === "active").length} active`}           accent="#a78bfa" />
         <StatCard label="Customers"     value={customers.length}   sub="registered clients"                                                          accent="#34d399" />
         <StatCard label="Services"      value={active.length}      sub={`${Object.keys(cats).length} categories`}                                    accent="#f59e0b" />
         <StatCard label="Today's Appts" value={todayAppts.length}  sub={`${appointments.filter(a => a.status === "confirmed").length} confirmed total`} accent="#60a5fa" />
       </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "2rem" }}>
-        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: "1.25rem" }}>
-          <h4 style={{ margin: "0 0 1rem", fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Services by Category</h4>
-          {services.length === 0 ? <div style={{ color: "var(--muted)", fontSize: ".85rem" }}>No services yet.</div> :
-            Object.entries(cats).map(([cat, count]) => (
-              <div key={cat} style={{ display: "flex", alignItems: "center", marginBottom: 10, gap: 10 }}>
-                <div style={{ flex: 1, fontSize: ".88rem", color: "var(--text)" }}>{cat}</div>
-                <div style={{ flex: 2, background: "var(--bg)", borderRadius: 99, height: 7, overflow: "hidden" }}>
-                  <div style={{ width: `${(count / services.length) * 100}%`, height: "100%", background: "var(--accent)", borderRadius: 99 }} />
-                </div>
-                <div style={{ width: 16, textAlign: "right", fontSize: ".82rem", color: "var(--muted)" }}>{count}</div>
-              </div>
-            ))}
-        </div>
-
-        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: "1.25rem" }}>
-          <h4 style={{ margin: "0 0 1rem", fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Appointment Status</h4>
-          {appointments.length === 0 ? <div style={{ color: "var(--muted)", fontSize: ".85rem" }}>No appointments yet.</div> :
-            Object.entries(STATUS_COLORS).map(([status, col]) => {
-              const cnt = appointments.filter(a => a.status === status).length;
-              return (
-                <div key={status} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <Badge status={status} />
-                  <div style={{ flex: 1, margin: "0 12px", background: "var(--bg)", borderRadius: 99, height: 7, overflow: "hidden" }}>
-                    <div style={{ width: `${appointments.length ? (cnt / appointments.length) * 100 : 0}%`, height: "100%", background: col.text, borderRadius: 99 }} />
-                  </div>
-                  <span style={{ fontSize: ".82rem", color: "var(--muted)", width: 16, textAlign: "right" }}>{cnt}</span>
-                </div>
-              );
-            })}
-        </div>
-      </div>
-
       <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: "1.25rem" }}>
         <h4 style={{ margin: "0 0 1rem", fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Upcoming Appointments</h4>
         {upcoming.length === 0
           ? <div style={{ color: "var(--muted)", fontSize: ".88rem" }}>No upcoming appointments.</div>
           : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
-            <tbody>
-              {upcoming.map(a => (
-                <tr key={a.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                  <td style={{ padding: "10px 8px", fontWeight: 600, color: "var(--text)" }}>{getName(customers, a.customer_id)}</td>
-                  <td style={{ padding: "10px 8px", color: "var(--muted)" }}>{getName(services, a.service_id)}</td>
-                  <td style={{ padding: "10px 8px", color: "var(--muted)" }}>{getName(employees, a.employee_id)}</td>
-                  <td style={{ padding: "10px 8px", color: "var(--muted)", whiteSpace: "nowrap" }}>{a.date} <span style={{ color: "var(--accent)", fontWeight: 600 }}>{a.time}</span></td>
-                  <td style={{ padding: "10px 8px" }}><Badge status={a.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+              <tbody>
+                {upcoming.map(a => (
+                  <tr key={a.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td style={{ padding: "10px 8px", fontWeight: 600, color: "var(--text)" }}>{getName(customers, a.customer_id)}</td>
+                    <td style={{ padding: "10px 8px", color: "var(--muted)" }}>{getName(services, a.service_id)}</td>
+                    <td style={{ padding: "10px 8px", color: "var(--muted)" }}>{getName(employees, a.employee_id)}</td>
+                    <td style={{ padding: "10px 8px", color: "var(--muted)", whiteSpace: "nowrap" }}>{a.date} <span style={{ color: "var(--accent)", fontWeight: 600 }}>{a.time}</span></td>
+                    <td style={{ padding: "10px 8px" }}><Badge status={a.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
         }
       </div>
     </div>
@@ -386,17 +875,17 @@ function Dashboard({ employees, customers, services, appointments }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// EMPLOYEES  (Supabase columns: id, name, role, phone, email, joined_date, status)
+// EMPLOYEES
 // ─────────────────────────────────────────────────────────────
 function Employees({ employees, reload, isAdmin }) {
-  const [modal, setModal]       = useState(null);
+  const [modal, setModal]         = useState(null);
   const [confirmId, setConfirmId] = useState(null);
-  const [search, setSearch]     = useState("");
-  const [saving, setSaving]     = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [apiErr, setApiErr]     = useState("");
+  const [search, setSearch]       = useState("");
+  const [saving, setSaving]       = useState(false);
+  const [deleting, setDeleting]   = useState(false);
+  const [apiErr, setApiErr]       = useState("");
 
-  const blank = { name: "", role: "", phone: "", email: "", joined_date: today(), status: "active" };
+  const blank = { name: "", role: "", phone: "", email: "", joined_date: today(), status: "active", salary: 0 };
   const [form, setForm] = useState(blank);
 
   const openAdd  = () => { setForm(blank); setApiErr(""); setModal("add"); };
@@ -405,7 +894,7 @@ function Employees({ employees, reload, isAdmin }) {
   const save = async () => {
     if (!form.name.trim()) return;
     setSaving(true); setApiErr("");
-    const payload = { name: form.name, role: form.role, phone: form.phone, email: form.email, joined_date: form.joined_date, status: form.status };
+    const payload = { name: form.name, role: form.role, phone: form.phone, email: form.email, joined_date: form.joined_date, status: form.status, salary: Number(form.salary || 0) };
     let err;
     if (modal === "add") ({ error: err } = await supabase.from("employees").insert([payload]));
     else ({ error: err } = await supabase.from("employees").update(payload).eq("id", form.id));
@@ -459,6 +948,7 @@ function Employees({ employees, reload, isAdmin }) {
               {emp.phone && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>📞 {emp.phone}</div>}
               {emp.email && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>✉️ {emp.email}</div>}
               {emp.joined_date && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>📅 Since {emp.joined_date}</div>}
+              {emp.salary > 0 && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>💰 {fmt(emp.salary)}/mo · Target: {fmt(emp.salary * 2)}</div>}
             </div>
             <div style={{ marginTop: 10 }}>
               <span style={{ fontSize: ".74rem", fontWeight: 700, padding: "2px 10px", borderRadius: 99, background: emp.status === "active" ? "rgba(52,211,153,.15)" : "rgba(156,163,175,.15)", color: emp.status === "active" ? "#34d399" : "#9ca3af" }}>{emp.status}</span>
@@ -477,12 +967,22 @@ function Employees({ employees, reload, isAdmin }) {
             <Field label="Joined Date"><input type="date" style={IS} value={form.joined_date} onChange={e => setForm({ ...form, joined_date: e.target.value })} /></Field>
           </div>
           <Field label="Email"><input style={IS} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
-          <Field label="Status">
-            <select style={IS} value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Monthly Salary (₹)">
+              <input type="number" style={IS} value={form.salary} onChange={e => setForm({ ...form, salary: e.target.value })} placeholder="0" />
+            </Field>
+            <Field label="Status">
+              <select style={IS} value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </Field>
+          </div>
+          {form.salary > 0 && (
+            <div style={{ fontSize: ".78rem", color: "var(--muted)", marginBottom: "1rem", background: "rgba(192,132,252,.08)", padding: "8px 12px", borderRadius: 8 }}>
+              Monthly target: <strong style={{ color: "var(--accent)" }}>{fmt(form.salary * 2)}</strong> · Bonus on achievement: <strong style={{ color: "#f59e0b" }}>₹2,500</strong>
+            </div>
+          )}
           {apiErr && <ErrBox msg={apiErr} />}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Btn ghost onClick={() => setModal(null)}>Cancel</Btn>
@@ -496,7 +996,7 @@ function Employees({ employees, reload, isAdmin }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// CUSTOMERS  (id, name, phone, email, visits, last_visit, notes)
+// CUSTOMERS
 // ─────────────────────────────────────────────────────────────
 function Customers({ customers, reload, isAdmin }) {
   const [modal, setModal]         = useState(null);
@@ -603,7 +1103,7 @@ function Customers({ customers, reload, isAdmin }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// SERVICES  (id, name, category, duration_min, price, is_active)
+// SERVICES
 // ─────────────────────────────────────────────────────────────
 function Services({ services, reload, isAdmin }) {
   const [modal, setModal]         = useState(null);
@@ -731,7 +1231,7 @@ function Services({ services, reload, isAdmin }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// APPOINTMENTS  (id, customer_id, employee_id, service_id, date, time, status, notes)
+// APPOINTMENTS
 // ─────────────────────────────────────────────────────────────
 function Appointments({ appointments, reload, employees, customers, services, isAdmin }) {
   const [modal, setModal]         = useState(null);
@@ -752,11 +1252,7 @@ function Appointments({ appointments, reload, employees, customers, services, is
   const save = async () => {
     if (!form.customer_id || !form.employee_id || !form.service_id || !form.date) return;
     setSaving(true); setApiErr("");
-    const payload = {
-      customer_id: form.customer_id, employee_id: form.employee_id,
-      service_id: form.service_id, date: form.date,
-      time: form.time, status: form.status, notes: form.notes,
-    };
+    const payload = { customer_id: form.customer_id, employee_id: form.employee_id, service_id: form.service_id, date: form.date, time: form.time, status: form.status, notes: form.notes };
     let err;
     if (modal === "add") ({ error: err } = await supabase.from("appointments").insert([payload]));
     else ({ error: err } = await supabase.from("appointments").update(payload).eq("id", form.id));
@@ -885,7 +1381,7 @@ function Appointments({ appointments, reload, employees, customers, services, is
 // ─────────────────────────────────────────────────────────────
 export default function App() {
   const [authPage, setAuthPage]       = useState("login");
-  const [session, setSession]         = useState(undefined); // undefined = loading, null = logged out
+  const [session, setSession]         = useState(undefined);
   const [profile, setProfile]         = useState(null);
   const [tab, setTab]                 = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -896,7 +1392,6 @@ export default function App() {
   const [services,     setServices]     = useState([]);
   const [appointments, setAppointments] = useState([]);
 
-  // ── Auth listener ──
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -905,7 +1400,6 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // ── Load profile when session changes ──
   useEffect(() => {
     if (!session?.user) { setProfile(null); return; }
     supabase.from("user_profiles").select("*").eq("id", session.user.id).single()
@@ -914,7 +1408,6 @@ export default function App() {
       });
   }, [session]);
 
-  // ── Load all data ──
   const loadData = useCallback(async () => {
     setDataLoading(true);
     const [er, cr, sr, ar] = await Promise.all([
@@ -932,27 +1425,22 @@ export default function App() {
 
   useEffect(() => { if (session) loadData(); }, [session, loadData]);
 
-  const isAdmin     = profile?.is_admin ?? false;
-  const userName    = profile?.name || session?.user?.email || "User";
-  const userRole    = profile?.role || "Staff";
-  const todayCount  = appointments.filter(a => a.date === today() && a.status !== "cancelled").length;
+  const isAdmin  = profile?.is_admin ?? false;
+  const userName = profile?.name || session?.user?.email || "User";
+  const userRole = profile?.role || "Staff";
+  const todayCount = appointments.filter(a => a.date === today() && a.status !== "cancelled").length;
 
+  // Nav items — dashboard label changes by role
   const nav = [
-    { id: "dashboard",    label: "Dashboard",    icon: I.dash },
-    { id: "appointments", label: "Appointments", icon: I.appt },
-    { id: "employees",    label: "Employees",    icon: I.emp  },
-    { id: "customers",    label: "Customers",    icon: I.cust },
-    { id: "services",     label: "Services",     icon: I.serv },
+    { id: "dashboard",    label: isAdmin ? "Owner Dashboard" : "My Dashboard", icon: I.dash },
+    { id: "appointments", label: "Appointments",  icon: I.appt },
+    { id: "employees",    label: "Employees",     icon: I.emp  },
+    { id: "customers",    label: "Customers",     icon: I.cust },
+    { id: "services",     label: "Services",      icon: I.serv },
   ];
 
-  // ── Render ──
   if (session === undefined) {
-    return (
-      <>
-        <style>{CSS}</style>
-        <Loading msg="Initialising…" />
-      </>
-    );
+    return (<><style>{CSS}</style><Loading msg="Initialising…" /></>);
   }
 
   if (!session) {
@@ -970,7 +1458,7 @@ export default function App() {
       <style>{CSS}</style>
       <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
 
-        {/* ── Sidebar ── */}
+        {/* Sidebar */}
         <aside style={{ width: sidebarOpen ? 224 : 0, minWidth: sidebarOpen ? 224 : 0, background: "var(--card)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", transition: "all .25s", overflow: "hidden" }}>
           <div style={{ padding: "1.5rem 1.25rem 1rem", borderBottom: "1px solid var(--border)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1001,7 +1489,7 @@ export default function App() {
 
           <div style={{ padding: "1rem", borderTop: "1px solid var(--border)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <div style={{ width: 34, height: 34, borderRadius: "50%", background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: ".9rem", color: "var(--bg)", flexShrink: 0 }}>
+              <div style={{ width: 34, height: 34, borderRadius: "50%", background: isAdmin ? "var(--accent)" : "rgba(192,132,252,.3)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: ".9rem", color: "var(--bg)", flexShrink: 0 }}>
                 {userName.charAt(0).toUpperCase()}
               </div>
               <div style={{ overflow: "hidden" }}>
@@ -1015,20 +1503,30 @@ export default function App() {
           </div>
         </aside>
 
-        {/* ── Main ── */}
+        {/* Main */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <header style={{ padding: "1rem 1.5rem", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12, background: "var(--card)", flexShrink: 0 }}>
             <button onClick={() => setSidebarOpen(p => !p)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex" }}><Icon d={I.menu} size={20} /></button>
-            <div style={{ flex: 1, fontFamily: "'Playfair Display',serif", fontWeight: 700, fontSize: "1.1rem", color: "var(--text)", textTransform: "capitalize" }}>{tab}</div>
+            <div style={{ flex: 1, fontFamily: "'Playfair Display',serif", fontWeight: 700, fontSize: "1.1rem", color: "var(--text)" }}>
+              {nav.find(n => n.id === tab)?.label || tab}
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {dataLoading && <div className="spin" style={{ width: 18, height: 18, borderRadius: "50%", border: "2px solid var(--border)", borderTopColor: "var(--accent)" }} />}
-              {isAdmin && <span style={{ background: "rgba(192,132,252,.12)", color: "var(--accent)", padding: "4px 12px", borderRadius: 99, fontWeight: 700, fontSize: ".78rem", display: "flex", alignItems: "center", gap: 5 }}><Icon d={I.shield} size={12} /> Owner</span>}
+              {isAdmin
+                ? <span style={{ background: "rgba(192,132,252,.12)", color: "var(--accent)", padding: "4px 12px", borderRadius: 99, fontWeight: 700, fontSize: ".78rem", display: "flex", alignItems: "center", gap: 5 }}><Icon d={I.shield} size={12} /> Owner</span>
+                : <span style={{ background: "rgba(52,211,153,.08)", color: "#34d399", padding: "4px 12px", borderRadius: 99, fontWeight: 700, fontSize: ".78rem", display: "flex", alignItems: "center", gap: 5 }}><Icon d={I.emp} size={12} /> Staff</span>
+              }
               <span style={{ background: "rgba(255,255,255,.05)", color: "var(--muted)", padding: "4px 12px", borderRadius: 99, fontSize: ".78rem" }}>{employees.length} staff · {customers.length} clients</span>
             </div>
           </header>
 
           <main style={{ flex: 1, overflowY: "auto", padding: "1.5rem" }}>
-            {tab === "dashboard"    && <Dashboard    employees={employees} customers={customers} services={services} appointments={appointments} />}
+            {tab === "dashboard" && isAdmin && (
+              <OwnerDashboard employees={employees} customers={customers} services={services} appointments={appointments} />
+            )}
+            {tab === "dashboard" && !isAdmin && (
+              <StaffDashboard employees={employees} customers={customers} services={services} appointments={appointments} profile={profile} />
+            )}
             {tab === "appointments" && <Appointments appointments={appointments} reload={loadData} employees={employees} customers={customers} services={services} isAdmin={isAdmin} />}
             {tab === "employees"    && <Employees    employees={employees}    reload={loadData} isAdmin={isAdmin} />}
             {tab === "customers"    && <Customers    customers={customers}    reload={loadData} isAdmin={isAdmin} />}
@@ -1039,3 +1537,6 @@ export default function App() {
     </>
   );
 }
+
+Done
+
