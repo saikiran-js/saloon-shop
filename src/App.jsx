@@ -1212,6 +1212,9 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
   const gstAmount         = +(taxableSubtotal * 0.05).toFixed(2);
   const total             = +(taxableSubtotal + gstAmount).toFixed(2);
 
+  const canSaveBill = !!form.customer_id && !!form.employee_id && items.some(item => item.service_id);
+  const canSaveCustomer = customerForm.name.trim().length > 0;
+
   // ── open modals ─────────────────────────────────────────────────────────────
   const openAdd = () => {
     setForm({ ...blankForm, bill_date: dateFilter || today() });
@@ -1888,7 +1891,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <input placeholder="Search bill / customer..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...IS, width: 220 }} />
-          <Btn ghost onClick={downloadMonthlyBillsPdf}><Icon d={I.print} size={15} /> Monthly Bills</Btn>
+          {isAdmin && <Btn ghost onClick={downloadMonthlyBillsPdf}><Icon d={I.print} size={15} /> Monthly Bills</Btn>}
           <Btn onClick={openAdd}><Icon d={I.add} size={15} /> New Bill</Btn>
         </div>
       </div>
@@ -1898,27 +1901,34 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
           <thead>
             <tr style={{ background: "var(--bg)" }}>
-              {["Bill No", "Customer", "Service", "Staff", "Date", "GST", "Total", ""].map(h => (
+              {["Bill No", "Customer", "Service", "Original", "Discount", "GST", "Total", "Staff", "Date", ""].map(h => (
                 <th key={h} style={{ textAlign: "left", padding: "11px 14px", color: "var(--muted)", fontWeight: 600, fontSize: ".75rem", textTransform: "uppercase", letterSpacing: ".05em", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>No bills found.</td></tr>
+              <tr><td colSpan={10} style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>No bills found.</td></tr>
             )}
-            {filtered.map(b => (
-              <tr key={b.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                <td style={{ padding: "12px 14px", fontWeight: 800, color: "var(--text)" }}>#{billNo(b)}</td>
-                <td style={{ padding: "12px 14px", color: "var(--text)" }}>{b.customer_name || getName(customers, b.customer_id)}</td>
-                <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{b.service_name || getName(services, b.service_id)}</td>
-                <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{b.employee_name || getName(employees, b.employee_id)}</td>
-                <td style={{ padding: "12px 14px", color: "var(--muted)", whiteSpace: "nowrap" }}>
-                  {b.bill_date} <span style={{ color: "var(--accent)", fontWeight: 600 }}>{String(b.bill_time || "").slice(0, 5)}</span>
-                </td>
-                <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{money(b.gst_amount)}</td>
-                <td style={{ padding: "12px 14px", fontWeight: 800, color: "var(--text)" }}>{money(b.total_amount)}</td>
-                <td style={{ padding: "12px 14px" }}>
+            {filtered.map(b => {
+              const rowCustomer = customers.find(c => c.id === b.customer_id);
+              return (
+                <tr key={b.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                  <td style={{ padding: "12px 14px", fontWeight: 800, color: "var(--text)" }}>#{billNo(b)}</td>
+                  <td style={{ padding: "12px 14px", color: "var(--text)" }}>
+                    {b.customer_name || rowCustomer?.name || "-"}
+                    {rowCustomer?.has_membership && <span style={{ marginLeft: 6 }}>👑</span>}
+                  </td>
+                  <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{b.service_name || getName(services, b.service_id)}</td>
+                  <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{money(b.service_price || 0)}</td>
+                  <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{money(Number(b.discount_amount || 0))}</td>
+                  <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{money(b.gst_amount)}</td>
+                  <td style={{ padding: "12px 14px", fontWeight: 800, color: "var(--text)" }}>{money(b.total_amount)}</td>
+                  <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{b.employee_name || getName(employees, b.employee_id)}</td>
+                  <td style={{ padding: "12px 14px", color: "var(--muted)", whiteSpace: "nowrap" }}>
+                    {b.bill_date} <span style={{ color: "var(--accent)", fontWeight: 600 }}>{String(b.bill_time || "").slice(0, 5)}</span>
+                  </td>
+                  <td style={{ padding: "12px 14px" }}>
                   <div style={{ display: "flex", gap: 6 }}>
                     {/* View */}
                     <button title="View bill" onClick={() => setViewBill(b)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--muted)", display: "flex" }}>
@@ -1943,7 +1953,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
                   </div>
                 </td>
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
       </div>
@@ -1956,8 +1966,8 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
           <BillForm />
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Btn ghost onClick={() => setModal(null)}>Cancel</Btn>
-            <Btn onClick={save} disabled={saving}>{saving ? "Saving..." : "Save Bill"}</Btn>
-            <Btn onClick={saveAndPrint} disabled={saving}><Icon d={I.print} size={13} /> {saving ? "Saving..." : "Save & Print"}</Btn>
+            <Btn onClick={save} disabled={saving || !canSaveBill}>{saving ? "Saving..." : "Save Bill"}</Btn>
+            <Btn onClick={saveAndPrint} disabled={saving || !canSaveBill}><Icon d={I.print} size={13} /> {saving ? "Saving..." : "Save & Print"}</Btn>
           </div>
         </Modal>
       )}
@@ -1968,8 +1978,8 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
           <BillForm />
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Btn ghost onClick={() => { setModal(null); setEditBill(null); }}>Cancel</Btn>
-            <Btn onClick={update} disabled={saving}>{saving ? "Saving..." : "Update Bill"}</Btn>
-            <Btn onClick={updateAndPrint} disabled={saving}><Icon d={I.print} size={13} /> {saving ? "Saving..." : "Update & Print"}</Btn>
+            <Btn onClick={update} disabled={saving || !canSaveBill}>{saving ? "Saving..." : "Update Bill"}</Btn>
+            <Btn onClick={updateAndPrint} disabled={saving || !canSaveBill}><Icon d={I.print} size={13} /> {saving ? "Saving..." : "Update & Print"}</Btn>
           </div>
         </Modal>
       )}
@@ -2024,7 +2034,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
           {customerErr && <ErrBox msg={customerErr} />}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Btn ghost onClick={() => setCustomerModal(false)}>Cancel</Btn>
-            <Btn onClick={saveCustomerFromBilling} disabled={customerSaving}>{customerSaving ? "Saving..." : "Save Customer"}</Btn>
+            <Btn onClick={saveCustomerFromBilling} disabled={customerSaving || !canSaveCustomer}>{customerSaving ? "Saving..." : "Save Customer"}</Btn>
           </div>
         </Modal>
       )}
@@ -2097,18 +2107,30 @@ export default function App() {
   useEffect(() => { if (session) loadData(); }, [session, loadData]);
 
   const isAdmin  = profile?.is_admin ?? false;
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setTheme("light");
+    }
+  }, [isAdmin]);
   const userName = profile?.name || session?.user?.email || "User";
   const userRole = profile?.role || "Staff";
   const todayCount = bills.filter(b => b.bill_date === today()).length;
 
-  // Nav items — dashboard label changes by role
+  // Nav items — owner gets dashboard, staff sees only operational screens
   const nav = [
-    { id: "dashboard",    label: isAdmin ? "Owner Dashboard" : "My Dashboard", icon: I.dash },
+    ...(isAdmin ? [{ id: "dashboard", label: "Owner Dashboard", icon: I.dash }] : []),
     { id: "billing",      label: "Billing",       icon: I.bill },
     { id: "employees",    label: "Employees",     icon: I.emp  },
     { id: "customers",    label: "Customers",     icon: I.cust },
     { id: "services",     label: "Services",      icon: I.serv },
   ];
+
+  useEffect(() => {
+    if (!isAdmin && tab === "dashboard") {
+      setTab("billing");
+    }
+  }, [isAdmin, tab]);
 
   if (session === undefined) {
     return (<><style>{CSS}</style><Loading msg="Initialising…" /></>);
@@ -2182,12 +2204,14 @@ export default function App() {
                 ? <span style={{ background: "rgba(192,132,252,.12)", color: "var(--accent)", padding: "4px 12px", borderRadius: 99, fontWeight: 700, fontSize: ".78rem", display: "flex", alignItems: "center", gap: 5 }}><Icon d={I.shield} size={12} /> Owner</span>
                 : <span style={{ background: "rgba(52,211,153,.08)", color: "#34d399", padding: "4px 12px", borderRadius: 99, fontWeight: 700, fontSize: ".78rem", display: "flex", alignItems: "center", gap: 5 }}><Icon d={I.emp} size={12} /> Staff</span>
               }
-              <button
-                onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
-                style={{ border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", padding: "5px 12px", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: ".78rem", fontFamily: "inherit" }}
-              >
-                {theme === "dark" ? "Light" : "Dark"}
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
+                  style={{ border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", padding: "5px 12px", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: ".78rem", fontFamily: "inherit" }}
+                >
+                  {theme === "dark" ? "Light" : "Dark"}
+                </button>
+              )}
               <span style={{ background: "rgba(255,255,255,.05)", color: "var(--muted)", padding: "4px 12px", borderRadius: 99, fontSize: ".78rem" }}>{employees.length} staff · {customers.length} clients</span>
             </div>
           </header>
