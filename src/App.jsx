@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabase";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS
@@ -52,6 +54,7 @@ const I = {
   star:     "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
   gift:     "M20 12v10H4V12M22 7H2v5h20V7zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z",
   trend:    "M23 6l-9.5 9.5-5-5L1 18M17 6h6v6",
+  search:   "M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15z",
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -61,6 +64,7 @@ const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root { --bg:#0d0b14; --card:#16131f; --border:#2a2540; --text:#f0ecff; --muted:#7c6fa0; --accent:#c084fc; }
+  [data-theme="light"] { --bg:#f7f8fb; --card:#ffffff; --border:#dbe1ea; --text:#172033; --muted:#687386; --accent:#2563eb; }
   body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; }
   input, select, textarea { font-family: 'DM Sans', sans-serif; }
   ::-webkit-scrollbar { width: 6px; }
@@ -314,192 +318,11 @@ function ForgotPage({ onBack }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// STAFF DASHBOARD — Daily appointments + sales performance
-// ─────────────────────────────────────────────────────────────
-function StaffDashboard({ employees, customers, services, appointments, profile }) {
-  const [selectedDate, setSelectedDate] = useState(today());
-
-  const getName = (list, id) => list.find(x => x.id === id)?.name || "—";
-  const getService = (id) => services.find(s => s.id === id);
-
-  // Appointments for selected date
-  const dayAppts = appointments
-    .filter(a => a.date === selectedDate)
-    .sort((a, b) => a.time > b.time ? 1 : -1);
-
-  // If staff (not admin), filter to their own appointments
-  const myAppts = profile?.is_admin
-    ? dayAppts
-    : dayAppts.filter(a => {
-        const emp = employees.find(e => e.email === profile?.email || e.id === a.employee_id);
-        return emp ? a.employee_id === emp?.id : true;
-      });
-
-  // Sales performance for the day
-  const completedToday = myAppts.filter(a => a.status === "completed");
-  const totalRevenue   = completedToday.reduce((sum, a) => {
-    const svc = getService(a.service_id);
-    return sum + (svc ? Number(svc.price) : 0);
-  }, 0);
-  const pendingCount   = myAppts.filter(a => a.status === "pending" || a.status === "confirmed").length;
-  const cancelledCount = myAppts.filter(a => a.status === "cancelled").length;
-
-  // Revenue by hour for a mini bar chart
-  const hourBuckets = {};
-  completedToday.forEach(a => {
-    const hr = a.time ? a.time.slice(0, 2) : "00";
-    const price = getService(a.service_id)?.price || 0;
-    hourBuckets[hr] = (hourBuckets[hr] || 0) + Number(price);
-  });
-  const hours = Object.keys(hourBuckets).sort();
-  const maxHourRev = Math.max(...Object.values(hourBuckets), 1);
-
-  return (
-    <div className="fade-up">
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <p style={{ color: "var(--muted)", fontSize: ".85rem" }}>Daily appointments & sales performance</p>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Icon d={I.calendar} size={16} style={{ color: "#fff" }} />
-          <input type="date" value={selectedDate}
-            onChange={e => setSelectedDate(e.target.value)}
-            style={{ ...IS, width: 180 }} />
-        </div>
-      </div>
-
-      {/* Stats row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(175px,1fr))", gap: "1rem", marginBottom: "1.75rem" }}>
-        <StatCard label="Total Appointments" value={myAppts.length} sub={`on ${selectedDate}`} accent="#a78bfa" icon={I.appt} />
-        <StatCard label="Completed" value={completedToday.length} sub="services done" accent="#34d399" icon={I.check} />
-        <StatCard label="Pending / Upcoming" value={pendingCount} sub="yet to complete" accent="#f59e0b" icon={I.spinner} />
-        <StatCard label="Revenue Today" value={fmt(totalRevenue)} sub={`${cancelledCount} cancelled`} accent="#60a5fa" icon={I.coin} />
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "1.25rem", alignItems: "start" }}>
-
-        {/* Appointments list */}
-        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
-          <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h4 style={{ margin: 0, fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>
-              Appointments — {selectedDate}
-            </h4>
-            <span style={{ fontSize: ".75rem", color: "var(--accent)", fontWeight: 700 }}>{myAppts.length} total</span>
-          </div>
-          {myAppts.length === 0
-            ? <div style={{ padding: "2.5rem", textAlign: "center", color: "var(--muted)", fontSize: ".88rem" }}>No appointments for this day.</div>
-            : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
-                <thead>
-                  <tr style={{ background: "var(--bg)" }}>
-                    {["Time", "Customer", "Service", "Staff", "Amount", "Status"].map(h => (
-                      <th key={h} style={{ textAlign: "left", padding: "9px 14px", color: "var(--muted)", fontWeight: 600, fontSize: ".73rem", textTransform: "uppercase", letterSpacing: ".05em", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {myAppts.map(a => {
-                    const svc = getService(a.service_id);
-                    return (
-                      <tr key={a.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                        <td style={{ padding: "11px 14px", fontWeight: 700, color: "var(--accent)", whiteSpace: "nowrap" }}>{a.time}</td>
-                        <td style={{ padding: "11px 14px", fontWeight: 600, color: "var(--text)" }}>{getName(customers, a.customer_id)}</td>
-                        <td style={{ padding: "11px 14px", color: "var(--muted)" }}>{svc?.name || "—"}</td>
-                        <td style={{ padding: "11px 14px", color: "var(--muted)" }}>{getName(employees, a.employee_id)}</td>
-                        <td style={{ padding: "11px 14px", fontWeight: 700, color: a.status === "completed" ? "#34d399" : "var(--muted)" }}>
-                          {a.status === "completed" ? fmt(svc?.price || 0) : "—"}
-                        </td>
-                        <td style={{ padding: "11px 14px" }}><Badge status={a.status} /></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-          }
-        </div>
-
-        {/* Sales performance panel */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-
-          {/* Revenue breakdown */}
-          <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: "1.25rem" }}>
-            <h4 style={{ margin: "0 0 1rem", fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Revenue by Hour</h4>
-            {hours.length === 0
-              ? <div style={{ color: "var(--muted)", fontSize: ".82rem", textAlign: "center", padding: "1rem 0" }}>No completed sales yet.</div>
-              : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {hours.map(hr => (
-                    <div key={hr} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ fontSize: ".78rem", color: "var(--muted)", width: 38, textAlign: "right", flexShrink: 0 }}>{hr}:00</div>
-                      <div style={{ flex: 1, background: "var(--bg)", borderRadius: 99, height: 8, overflow: "hidden" }}>
-                        <div style={{ width: `${(hourBuckets[hr] / maxHourRev) * 100}%`, height: "100%", background: "var(--accent)", borderRadius: 99, transition: "width .4s" }} />
-                      </div>
-                      <div style={{ fontSize: ".78rem", color: "var(--accent)", fontWeight: 700, width: 70, textAlign: "right", flexShrink: 0 }}>{fmt(hourBuckets[hr])}</div>
-                    </div>
-                  ))}
-                </div>
-            }
-          </div>
-
-          {/* Service breakdown */}
-          <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: "1.25rem" }}>
-            <h4 style={{ margin: "0 0 1rem", fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Services Done Today</h4>
-            {completedToday.length === 0
-              ? <div style={{ color: "var(--muted)", fontSize: ".82rem", textAlign: "center", padding: ".5rem 0" }}>None yet.</div>
-              : (() => {
-                  const svcCounts = {};
-                  completedToday.forEach(a => {
-                    const name = getService(a.service_id)?.name || "Unknown";
-                    const price = getService(a.service_id)?.price || 0;
-                    if (!svcCounts[name]) svcCounts[name] = { count: 0, rev: 0 };
-                    svcCounts[name].count++;
-                    svcCounts[name].rev += Number(price);
-                  });
-                  return Object.entries(svcCounts)
-                    .sort((a, b) => b[1].rev - a[1].rev)
-                    .map(([name, data]) => (
-                      <div key={name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid var(--border)" }}>
-                        <div>
-                          <div style={{ fontSize: ".85rem", fontWeight: 600, color: "var(--text)" }}>{name}</div>
-                          <div style={{ fontSize: ".73rem", color: "var(--muted)" }}>×{data.count} times</div>
-                        </div>
-                        <div style={{ fontSize: ".88rem", fontWeight: 700, color: "#34d399" }}>{fmt(data.rev)}</div>
-                      </div>
-                    ));
-                })()
-            }
-            {completedToday.length > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, paddingTop: 10 }}>
-                <span style={{ fontSize: ".82rem", fontWeight: 700, color: "var(--muted)" }}>Total</span>
-                <span style={{ fontSize: "1rem", fontWeight: 800, color: "var(--accent)", fontFamily: "'Playfair Display',serif" }}>{fmt(totalRevenue)}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Status summary */}
-          <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: "1.25rem" }}>
-            <h4 style={{ margin: "0 0 .875rem", fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Status Summary</h4>
-            {["completed", "confirmed", "pending", "cancelled"].map(s => {
-              const cnt = myAppts.filter(a => a.status === s).length;
-              return (
-                <div key={s} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7 }}>
-                  <Badge status={s} />
-                  <span style={{ fontSize: ".85rem", fontWeight: 700, color: cnt > 0 ? "var(--text)" : "var(--muted)" }}>{cnt}</span>
-                </div>
-              );
-            })}
-          </div>
-
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────
 // OWNER DASHBOARD — Staff, Customers, Calendar + Performance
 // ─────────────────────────────────────────────────────────────
-function OwnerDashboard({ employees, customers, services, appointments }) {
+function OwnerDashboard({ employees, customers, services, bills }) {
   const [selectedDate, setSelectedDate] = useState(today());
   const [calMonth, setCalMonth] = useState(() => {
     const d = new Date();
@@ -525,39 +348,38 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
     return { year: y, month: m };
   });
 
-  // Get appointments per day for dot indicators
+  // Get bills per day for dot indicators
   const apptsByDate = {};
-  appointments.forEach(a => {
-    if (!apptsByDate[a.date]) apptsByDate[a.date] = 0;
-    apptsByDate[a.date]++;
+  bills.forEach(b => {
+    if (!b.bill_date) return;
+    apptsByDate[b.bill_date] = (apptsByDate[b.bill_date] || 0) + 1;
   });
 
-  // Staff performance for selected date
-  const dayAppts = appointments.filter(a => a.date === selectedDate);
+  // Staff performance for selected date (based on bills)
+  const dayBills = bills.filter(b => b.bill_date === selectedDate);
 
   const staffPerformance = employees
     .filter(e => e.status === "active")
     .map(emp => {
-      const empAppts = dayAppts.filter(a => a.employee_id === emp.id);
-      const completed = empAppts.filter(a => a.status === "completed");
-      const revenue = completed.reduce((sum, a) => {
-        const svc = getService(a.service_id);
-        return sum + (svc ? Number(svc.price) : 0);
-      }, 0);
+      const empBills = dayBills.filter(b => b.employee_id === emp.id);
+      const billRevenue = empBills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+      const totalRevenue = billRevenue;
       const salary = Number(emp.salary || 0);
       const target = Number(emp.target_amount || 0);
-      const pct    = target > 0 ? Math.min((revenue / target) * 100, 150) : 0;
-      const bonus  = revenue >= target ? 2500 : 0;
+      const pct    = target > 0 ? Math.min((totalRevenue / target) * 100, 150) : 0;
+      const bonus  = totalRevenue >= target ? 2500 : 0;
       return {
         ...emp,
-        appts:     empAppts.length,
-        completed: completed.length,
-        revenue,
+        appts:     empBills.length,
+        completed: empBills.length,
+        revenue: totalRevenue,
+        appointmentRevenue: 0,
+        billRevenue,
         salary,
         target,
         pct,
         bonus,
-        achieved:  revenue >= target,
+        achieved:  totalRevenue >= target,
       };
     })
     .sort((a, b) => b.pct - a.pct);
@@ -566,117 +388,58 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
 
   // Month-level revenue summary for selected date's month
   const monthStr = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, "0")}`;
-  const monthAppts = appointments.filter(a => a.date.startsWith(monthStr) && a.status === "completed");
-  const monthRevenue = monthAppts.reduce((s, a) => s + (Number(getService(a.service_id)?.price) || 0), 0);
+  const monthBills = bills.filter(b => String(b.bill_date || "").startsWith(monthStr));
+  const monthBillRevenue = monthBills.reduce((s, b) => s + Number(b.total_amount || 0), 0);
+  const monthRevenue = monthBillRevenue;
 
   const totalDayRevenue = staffPerformance.reduce((s, e) => s + e.revenue, 0);
 
+  // Customers visited counts
+  const customersTodayCount = new Set(bills.filter(b => b.bill_date === today()).map(b => b.customer_id || b.customer_name)).size;
+  const customersMonthCount = new Set(monthBills.map(b => b.customer_id || b.customer_name).filter(Boolean)).size;
   const rankColors = ["#f59e0b", "#94a3b8", "#cd7c54", "#7c6fa0", "#7c6fa0"];
   const rankEmojis = ["🥇", "🥈", "🥉"];
   const monthStaffPerformance = employees
   .filter(e => e.status === "active")
-  .map(emp => {
-    const empAppts = monthAppts.filter(
-      a => a.employee_id === emp.id
-    );
+    .map(emp => {
+    const empAppts = monthBills.filter(b => b.employee_id === emp.id);
 
-    const revenue = empAppts.reduce((sum, a) => {
-      const svc = getService(a.service_id);
-      return sum + (svc ? Number(svc.price) : 0);
-    }, 0);
+    const revenue = 0;
+    const billRevenue = monthBills
+      .filter(b => b.employee_id === emp.id)
+      .reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+    const totalRevenue = billRevenue;
 
     const salary = Number(emp.salary || 0);
     const target = Number(emp.target_amount || 0);
 
     return {
       ...emp,
-      revenue,
+      revenue: totalRevenue,
+      appointmentRevenue: 0,
+      billRevenue,
       target,
       pct:
         target > 0
-          ? Math.min((revenue / target) * 100, 150)
+          ? Math.min((totalRevenue / target) * 100, 150)
           : 0,
       completed: empAppts.length,
-      achieved: revenue >= target
+      achieved: totalRevenue >= target
     };
   })
   .sort((a, b) => b.revenue - a.revenue);
 
   return (
     <div className="fade-up">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <p style={{ color: "var(--muted)", fontSize: ".85rem" }}>Staff & customer overview · Performance rankings</p>
-        </div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <div style={{ background: "rgba(192,132,252,.1)", border: "1px solid rgba(192,132,252,.25)", borderRadius: 10, padding: "6px 14px", fontSize: ".82rem", color: "var(--accent)", fontWeight: 700 }}>
-            <Icon d={I.shield} size={12} style={{ display: "inline", verticalAlign: "middle" }} /> Owner View
-          </div>
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem", marginBottom: "1.25rem" }}>
-
-        {/* ── Employee List ── */}
-        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
-          <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h4 style={{ margin: 0, fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>
-              <span style={{ color: "#a78bfa", marginRight: 6 }}>●</span>Staff Members
-            </h4>
-            <span style={{ fontSize: ".75rem", color: "var(--muted)" }}>{employees.filter(e => e.status === "active").length} active</span>
-          </div>
-          <div style={{ maxHeight: 300, overflowY: "auto" }}>
-            {employees.length === 0
-              ? <div style={{ padding: "1.5rem", color: "var(--muted)", fontSize: ".85rem", textAlign: "center" }}>No employees found.</div>
-              : employees.map(emp => (
-                <div key={emp.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 1.25rem", borderBottom: "1px solid var(--border)" }}>
-                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(192,132,252,.15)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display',serif", fontWeight: 700, color: "var(--accent)", flexShrink: 0 }}>
-                    {emp.name.charAt(0)}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: ".88rem", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{emp.name}</div>
-                    <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>{emp.role || "Staff"}</div>
-                  </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    {emp.salary && <div style={{ fontSize: ".78rem", color: "var(--muted)", fontWeight: 600 }}>{fmt(emp.salary)}/mo</div>}
-                    <span style={{ fontSize: ".7rem", fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: emp.status === "active" ? "rgba(52,211,153,.15)" : "rgba(156,163,175,.15)", color: emp.status === "active" ? "#34d399" : "#9ca3af" }}>{emp.status}</span>
-                  </div>
-                </div>
-              ))
-            }
-          </div>
-        </div>
-
-        {/* ── Customer List ── */}
-        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
-          <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h4 style={{ margin: 0, fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>
-              <span style={{ color: "#34d399", marginRight: 6 }}>●</span>Customers
-            </h4>
-            <span style={{ fontSize: ".75rem", color: "var(--muted)" }}>{customers.length} registered</span>
-          </div>
-          <div style={{ maxHeight: 300, overflowY: "auto" }}>
-            {customers.length === 0
-              ? <div style={{ padding: "1.5rem", color: "var(--muted)", fontSize: ".85rem", textAlign: "center" }}>No customers yet.</div>
-              : customers.map(c => (
-                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 1.25rem", borderBottom: "1px solid var(--border)" }}>
-                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(52,211,153,.12)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display',serif", fontWeight: 700, color: "#34d399", flexShrink: 0 }}>
-                    {c.name.charAt(0)}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: ".88rem", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
-                    <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>{c.phone || c.email || "—"}</div>
-                  </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontSize: ".78rem", fontWeight: 700, color: "var(--accent)" }}>{c.visits || 0} visits</div>
-                    {c.last_visit && <div style={{ fontSize: ".7rem", color: "var(--muted)" }}>{c.last_visit}</div>}
-                  </div>
-                </div>
-              ))
-            }
-          </div>
-        </div>
-      </div>
+      
+     <div style={{ marginBottom: 16 }}>
+       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: "1rem" }}>
+         <StatCard label="Today's Revenue" value={fmt(totalDayRevenue)} sub="completed payments" accent="#34d399" />
+         <StatCard label="This Month Revenue" value={fmt(monthRevenue)} sub={`${monthNames[calMonth.month]} revenue`} accent="var(--accent)" />
+         <StatCard label="Customers Today" value={customersTodayCount} sub="unique visitors" accent="#60a5fa" />
+         <StatCard label="Customers This Month" value={customersMonthCount} sub={`${monthNames[calMonth.month]} visitors`} accent="#f59e0b" />
+       </div>
+     </div>
 
       {/* ── Calendar + Performance ── */}
       <div style={{ display: "grid", gridTemplateColumns: "300px 1fr 1fr", gap: "1.25rem", alignItems: "start" }}>
@@ -768,6 +531,9 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
                         <div>
                           <div style={{ fontWeight: 700, fontSize: ".92rem", color: "var(--text)" }}>{emp.name}</div>
                           <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>{emp.role || "Staff"} · {emp.completed} completed · {emp.appts} total appts</div>
+                            <div style={{ fontSize: ".72rem", color: "var(--muted)", marginTop: 2 }}>
+                            Bills {fmt(emp.billRevenue)}
+                          </div>
                         </div>
                       </div>
                       <div style={{ textAlign: "right" }}>
@@ -780,20 +546,7 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
                 ))}
 
                 {/* Day summary */}
-                <div style={{ display: "flex", gap: "1rem", marginTop: "0.5rem", padding: "0.875rem 1rem", background: "var(--border)", borderRadius: 10, flexWrap: "wrap" }}>
-                  <div style={{ flex: 1, minWidth: 100 }}>
-                    <div style={{ fontSize: ".7rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Day Revenue</div>
-                    <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.1rem", fontWeight: 800, color: "#34d399" }}>{fmt(totalDayRevenue)}</div>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 100 }}>
-                    <div style={{ fontSize: ".7rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Appointments</div>
-                    <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.1rem", fontWeight: 800, color: "var(--text)" }}>{dayAppts.length}</div>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 100 }}>
-                    <div style={{ fontSize: ".7rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Month Revenue</div>
-                    <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.1rem", fontWeight: 800, color: "var(--accent)" }}>{fmt(monthRevenue)}</div>
-                  </div>
-                </div>
+                
 
               </div>
           }
@@ -906,6 +659,15 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
             </div>
           </div>
         </div>
+        <div style={{ marginTop: 12 }}>
+          <div style={{ height: 10, background: "rgba(255,255,255,.06)", borderRadius: 6, overflow: "hidden" }}>
+            <div style={{ width: `${Math.min(emp.pct, 100)}%`, height: "100%", background: emp.pct >= 100 ? "#34d399" : "var(--accent)", transition: "width .25s ease" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: ".72rem", color: "var(--muted)" }}>
+            <span>Target progress</span>
+            <span>{Math.min(emp.pct, 100).toFixed(0)}% of 100%</span>
+          </div>
+        </div>
       </div>
     ))}
   </div>
@@ -918,14 +680,14 @@ function OwnerDashboard({ employees, customers, services, appointments }) {
 // ─────────────────────────────────────────────────────────────
 // LEGACY DASHBOARD (generic overview — kept for non-dashboard tabs)
 // ─────────────────────────────────────────────────────────────
-function Dashboard({ employees, customers, services, appointments }) {
+function Dashboard({ employees, customers, services, bills }) {
   const active      = services.filter(s => s.is_active);
   const cats        = {};
   services.forEach(s => { cats[s.category] = (cats[s.category] || 0) + 1; });
-  const todayAppts  = appointments.filter(a => a.date === today());
-  const upcoming    = appointments
-    .filter(a => a.date >= today() && a.status !== "cancelled")
-    .sort((a, b) => (a.date + a.time) > (b.date + b.time) ? 1 : -1)
+  const todayAppts  = bills.filter(b => b.bill_date === today());
+  const upcoming    = bills
+    .filter(b => b.bill_date >= today())
+    .sort((a, b) => (a.bill_date + (a.bill_time || "")) > (b.bill_date + (b.bill_time || "")) ? 1 : -1)
     .slice(0, 6);
   const getName = (list, id) => list.find(x => x.id === id)?.name || "—";
 
@@ -936,21 +698,21 @@ function Dashboard({ employees, customers, services, appointments }) {
         <StatCard label="Employees"     value={employees.length}   sub={`${employees.filter(e => e.status === "active").length} active`}           accent="#a78bfa" />
         <StatCard label="Customers"     value={customers.length}   sub="registered clients"                                                          accent="#34d399" />
         <StatCard label="Services"      value={active.length}      sub={`${Object.keys(cats).length} categories`}                                    accent="#f59e0b" />
-        <StatCard label="Today's Appts" value={todayAppts.length}  sub={`${appointments.filter(a => a.status === "confirmed").length} confirmed total`} accent="#60a5fa" />
+        <StatCard label="Today's Sales" value={todayAppts.length}  sub={`${bills.filter(b => b.bill_date === today()).length} transactions`} accent="#60a5fa" />
       </div>
       <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: "1.25rem" }}>
-        <h4 style={{ margin: "0 0 1rem", fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Upcoming Appointments</h4>
+        <h4 style={{ margin: "0 0 1rem", fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Recent Sales</h4>
         {upcoming.length === 0
-          ? <div style={{ color: "var(--muted)", fontSize: ".88rem" }}>No upcoming appointments.</div>
+          ? <div style={{ color: "var(--muted)", fontSize: ".88rem" }}>No recent sales.</div>
           : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
               <tbody>
                 {upcoming.map(a => (
                   <tr key={a.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                    <td style={{ padding: "10px 8px", fontWeight: 600, color: "var(--text)" }}>{getName(customers, a.customer_id)}</td>
-                    <td style={{ padding: "10px 8px", color: "var(--muted)" }}>{getName(services, a.service_id)}</td>
-                    <td style={{ padding: "10px 8px", color: "var(--muted)" }}>{getName(employees, a.employee_id)}</td>
-                    <td style={{ padding: "10px 8px", color: "var(--muted)", whiteSpace: "nowrap" }}>{a.date} <span style={{ color: "var(--accent)", fontWeight: 600 }}>{a.time}</span></td>
-                    <td style={{ padding: "10px 8px" }}><Badge status={a.status} /></td>
+                    <td style={{ padding: "10px 8px", fontWeight: 600, color: "var(--text)" }}>{a.customer_name || getName(customers, a.customer_id)}</td>
+                    <td style={{ padding: "10px 8px", color: "var(--muted)" }}>{a.service_name || getName(services, a.service_id)}</td>
+                    <td style={{ padding: "10px 8px", color: "var(--muted)" }}>{a.employee_name || getName(employees, a.employee_id)}</td>
+                    <td style={{ padding: "10px 8px", color: "var(--muted)", whiteSpace: "nowrap" }}>{a.bill_date} <span style={{ color: "var(--accent)", fontWeight: 600 }}>{String(a.bill_time || "").slice(0,5)}</span></td>
+                    <td style={{ padding: "10px 8px" }}>{fmt(a.total_amount || 0)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1066,7 +828,7 @@ function Employees({ employees, reload, isAdmin }) {
                 <option value="other">Other</option>
               </select>
             </Field>
-            <Field label="Joined Date"><input type="date" style={IS} value={form.joined_date} onChange={e => setForm({ ...form, joined_date: e.target.value })} /></Field>
+            <Field label="Joined Date"><input type="date" style={IS} value={form.joined_date} onChange={e => setForm({ ...form, joined_date: e.target.value })} onMouseEnter={e => e.target.showPicker?.()} /></Field>
           </div>
           <Field label="Phone"><input style={IS} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
           <Field label="Email"><input style={IS} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
@@ -1215,7 +977,7 @@ function Customers({ customers, reload, isAdmin }) {
           </div>
           <Field label="Phone"><input style={IS} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
           <Field label="Email"><input style={IS} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
-          <Field label="Last Visit"><input type="date" style={IS} value={form.last_visit} onChange={e => setForm({ ...form, last_visit: e.target.value })} /></Field>
+          <Field label="Last Visit"><input type="date" style={IS} value={form.last_visit} onChange={e => setForm({ ...form, last_visit: e.target.value })} onMouseEnter={e => e.target.showPicker?.()} /></Field>
           <Field label="Membership">
             <label style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text)", fontSize: ".88rem", fontWeight: 700 }}>
               <input type="checkbox" checked={!!form.has_membership} onChange={e => setForm({ ...form, has_membership: e.target.checked })} />
@@ -1226,8 +988,8 @@ function Customers({ customers, reload, isAdmin }) {
             <>
               <Field label="Membership Card No."><input style={IS} value={form.membership_card_no || ""} onChange={e => setForm({ ...form, membership_card_no: e.target.value })} /></Field>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <Field label="Membership Start"><input type="date" style={IS} value={form.membership_start || ""} onChange={e => setForm({ ...form, membership_start: e.target.value })} /></Field>
-                <Field label="Membership End"><input type="date" style={IS} value={form.membership_end || ""} onChange={e => setForm({ ...form, membership_end: e.target.value })} /></Field>
+                <Field label="Membership Start"><input type="date" style={IS} value={form.membership_start || ""} onChange={e => setForm({ ...form, membership_start: e.target.value })} onMouseEnter={e => e.target.showPicker?.()} /></Field>
+                <Field label="Membership End"><input type="date" style={IS} value={form.membership_end || ""} onChange={e => setForm({ ...form, membership_end: e.target.value })} onMouseEnter={e => e.target.showPicker?.()} /></Field>
               </div>
             </>
           )}
@@ -1377,150 +1139,7 @@ function Services({ services, reload, isAdmin }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// APPOINTMENTS
-// ─────────────────────────────────────────────────────────────
-function Appointments({ appointments, reload, employees, customers, services, isAdmin }) {
-  const [modal, setModal]         = useState(null);
-  const [confirmId, setConfirmId] = useState(null);
-  const [filter, setFilter]       = useState("all");
-  const [search, setSearch]       = useState("");
-  const [saving, setSaving]       = useState(false);
-  const [deleting, setDeleting]   = useState(false);
-  const [apiErr, setApiErr]       = useState("");
-
-  const blankForm = { customer_id: "", employee_id: "", service_id: "", date: today(), time: "10:00", status: "pending", notes: "" };
-  const [form, setForm] = useState(blankForm);
-
-  const openAdd  = () => { setForm(blankForm); setApiErr(""); setModal("add"); };
-  const openEdit = (a) => { setForm({ ...a }); setApiErr(""); setModal({ edit: a }); };
-  const getName  = (list, id) => list.find(x => x.id === id)?.name || "—";
-
-  const save = async () => {
-    if (!form.customer_id || !form.employee_id || !form.service_id || !form.date) return;
-    setSaving(true); setApiErr("");
-    const payload = { customer_id: form.customer_id, employee_id: form.employee_id, service_id: form.service_id, date: form.date, time: form.time, status: form.status, notes: form.notes };
-    let err;
-    if (modal === "add") ({ error: err } = await supabase.from("appointments").insert([payload]));
-    else ({ error: err } = await supabase.from("appointments").update(payload).eq("id", form.id));
-    setSaving(false);
-    if (err) { setApiErr(err.message); return; }
-    await reload();
-    setModal(null);
-  };
-
-  const del = async (id) => {
-    setDeleting(true);
-    const { error: err } = await supabase.from("appointments").delete().eq("id", id);
-    setDeleting(false);
-    if (err) { alert(err.message); return; }
-    await reload();
-    setConfirmId(null);
-  };
-
-  const filtered = appointments
-    .filter(a => filter === "all" || a.status === filter)
-    .filter(a => {
-      const cn = getName(customers, a.customer_id).toLowerCase();
-      const en = getName(employees, a.employee_id).toLowerCase();
-      return cn.includes(search.toLowerCase()) || en.includes(search.toLowerCase());
-    })
-    .sort((a, b) => (a.date + a.time) < (b.date + b.time) ? 1 : -1);
-
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <input placeholder="Search customer / staff…" value={search} onChange={e => setSearch(e.target.value)} style={{ ...IS, width: 220 }} />
-          <Btn onClick={openAdd}><Icon d={I.add} size={15} /> Add</Btn>
-        </div>
-      </div>
-
-      <div style={{ display: "flex", gap: 8, marginBottom: "1.25rem", flexWrap: "wrap" }}>
-        {["all", "pending", "confirmed", "completed", "cancelled"].map(s => (
-          <button key={s} onClick={() => setFilter(s)} style={{ padding: "5px 14px", borderRadius: 99, border: `1px solid ${filter === s ? "var(--accent)" : "var(--border)"}`, background: filter === s ? "var(--accent)" : "none", color: filter === s ? "var(--bg)" : "var(--muted)", cursor: "pointer", fontWeight: 600, fontSize: ".8rem", textTransform: "capitalize" }}>
-            {s}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
-          <thead>
-            <tr style={{ background: "var(--bg)" }}>
-              {["Customer", "Service", "Staff", "Date & Time", "Status", "Notes", ""].map(h => (
-                <th key={h} style={{ textAlign: "left", padding: "11px 14px", color: "var(--muted)", fontWeight: 600, fontSize: ".75rem", textTransform: "uppercase", letterSpacing: ".05em", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 && <tr><td colSpan={7} style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>No appointments found.</td></tr>}
-            {filtered.map(a => (
-              <tr key={a.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                <td style={{ padding: "12px 14px", fontWeight: 600, color: "var(--text)" }}>{getName(customers, a.customer_id)}</td>
-                <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{getName(services, a.service_id)}</td>
-                <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{getName(employees, a.employee_id)}</td>
-                <td style={{ padding: "12px 14px", color: "var(--muted)", whiteSpace: "nowrap" }}>{a.date} <span style={{ color: "var(--accent)", fontWeight: 600 }}>{a.time}</span></td>
-                <td style={{ padding: "12px 14px" }}><Badge status={a.status} /></td>
-                <td style={{ padding: "12px 14px", color: "var(--muted)", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.notes || "—"}</td>
-                <td style={{ padding: "12px 14px" }}>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => openEdit(a)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--muted)", display: "flex" }}><Icon d={I.edit} size={13} /></button>
-                    {isAdmin
-                      ? <button onClick={() => setConfirmId(a.id)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "#e53e3e", display: "flex" }}><Icon d={I.del} size={13} /></button>
-                      : <button disabled style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "not-allowed", color: "var(--border)", display: "flex", opacity: .4 }}><Icon d={I.del} size={13} /></button>
-                    }
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {(modal === "add" || modal?.edit) && (
-        <Modal title={modal === "add" ? "New Appointment" : "Edit Appointment"} onClose={() => setModal(null)} wide>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Field label="Customer">
-              <select style={IS} value={form.customer_id} onChange={e => setForm({ ...form, customer_id: e.target.value })}>
-                <option value="">— select —</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Staff">
-              <select style={IS} value={form.employee_id} onChange={e => setForm({ ...form, employee_id: e.target.value })}>
-                <option value="">— select —</option>
-                {employees.filter(e => e.status === "active").map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
-            </Field>
-          </div>
-          <Field label="Service">
-            <select style={IS} value={form.service_id} onChange={e => setForm({ ...form, service_id: e.target.value })}>
-              <option value="">— select —</option>
-              {services.filter(s => s.is_active).map(s => <option key={s.id} value={s.id}>{s.name} — {fmt(s.price)}</option>)}
-            </select>
-          </Field>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <Field label="Date"><input type="date" style={IS} value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></Field>
-            <Field label="Time"><input type="time" style={IS} value={form.time} onChange={e => setForm({ ...form, time: e.target.value })} /></Field>
-          </div>
-          <Field label="Status">
-            <select style={IS} value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
-              {["pending", "confirmed", "completed", "cancelled"].map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </Field>
-          <Field label="Notes"><textarea style={{ ...IS, minHeight: 68, resize: "vertical" }} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes…" /></Field>
-          {apiErr && <ErrBox msg={apiErr} />}
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <Btn ghost onClick={() => setModal(null)}>Cancel</Btn>
-            <Btn onClick={save} disabled={saving}>{saving ? "Saving…" : "Save Appointment"}</Btn>
-          </div>
-        </Modal>
-      )}
-      {confirmId && <Confirm msg="Delete this appointment?" loading={deleting} onOk={() => del(confirmId)} onCancel={() => setConfirmId(null)} />}
-    </div>
-  );
-}
+// (appointments feature removed — billing-only flows used)
 
 // ─────────────────────────────────────────────────────────────
 // APP ROOT
@@ -1531,9 +1150,17 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
   const [viewBill, setViewBill]   = useState(null);
   const [confirmId, setConfirmId] = useState(null);
   const [dateFilter, setDateFilter] = useState(today());
+  const [calMonth, setCalMonth] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
   const [search, setSearch]       = useState("");
   const [serviceSearch, setServiceSearch] = useState([""]);
+  const [serviceOpen, setServiceOpen] = useState([]);
   const [saving, setSaving]       = useState(false);
+  const [customerModal, setCustomerModal] = useState(false);
+  const [customerSaving, setCustomerSaving] = useState(false);
+  const [customerErr, setCustomerErr] = useState("");
   const [deleting, setDeleting]   = useState(false);
   const [apiErr, setApiErr]       = useState("");
 
@@ -1541,8 +1168,13 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
     customer_id: "", employee_id: "", bill_date: today(), bill_time: "10:00",
     pricing_type: "general", manual_discount: 0, payment_mode: "Cash", notes: "",
   };
+  const blankCustomer = {
+    name: "", gender: "other", phone: "", email: "", visits: 0, last_visit: today(),
+    has_membership: false, membership_card_no: "", membership_start: "", membership_end: "", notes: "",
+  };
   const [form, setForm] = useState(blankForm);
   const [items, setItems] = useState([{ service_id: "" }]);
+  const [customerForm, setCustomerForm] = useState(blankCustomer);
 
   // ── helpers ────────────────────────────────────────────────────────────────
   const money     = (n) => `Rs. ${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1551,6 +1183,19 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
     Number(type === "membership" ? (service?.membership_price ?? service?.price ?? 0) : (service?.general_price ?? service?.price ?? 0));
   const generalFor = (service) => Number(service?.general_price ?? service?.price ?? 0);
   const billNo     = (b) => String(b.invoice_no || "").padStart(5, "0");
+  const daysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
+  const firstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
+  const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const prevMonth = () => setCalMonth(p => {
+    const m = p.month === 0 ? 11 : p.month - 1;
+    const y = p.month === 0 ? p.year - 1 : p.year;
+    return { year: y, month: m };
+  });
+  const nextMonth = () => setCalMonth(p => {
+    const m = p.month === 11 ? 0 : p.month + 1;
+    const y = p.month === 11 ? p.year + 1 : p.year;
+    return { year: y, month: m };
+  });
 
   // ── live totals for the form ────────────────────────────────────────────────
   const billItems = items
@@ -1572,6 +1217,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
     setForm({ ...blankForm, bill_date: dateFilter || today() });
     setItems([{ service_id: "" }]);
     setServiceSearch([""]);
+    setServiceOpen([false]);
     setApiErr("");
     setEditBill(null);
     setModal("add");
@@ -1594,18 +1240,58 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
     });
     setItems(lineItems);
     setServiceSearch(lineItems.map(() => ""));
+    setServiceOpen(lineItems.map(() => false));
     setApiErr("");
     setEditBill(bill);
     setModal("edit");
   };
 
+  const openCustomerModal = () => {
+    setCustomerForm(blankCustomer);
+    setCustomerErr("");
+    setCustomerModal(true);
+  };
+
   // ── item helpers ────────────────────────────────────────────────────────────
-  const addItem    = () => { setItems([...items, { service_id: "" }]); setServiceSearch([...serviceSearch, ""]); };
-  const removeItem = (index) => { setItems(items.filter((_, i) => i !== index)); setServiceSearch(serviceSearch.filter((_, i) => i !== index)); };
+  const addItem    = () => { setItems([...items, { service_id: "" }]); setServiceSearch([...serviceSearch, ""]); setServiceOpen([...serviceOpen, false]); };
+  const removeItem = (index) => { setItems(items.filter((_, i) => i !== index)); setServiceSearch(serviceSearch.filter((_, i) => i !== index)); setServiceOpen(serviceOpen.filter((_, i) => i !== index)); };
   const updateItem = (index, service_id) => setItems(items.map((item, i) => i === index ? { ...item, service_id } : item));
   const updateCustomer = (customer_id) => {
     const customer = customers.find(c => c.id === customer_id);
     setForm({ ...form, customer_id, pricing_type: customer?.has_membership ? "membership" : "general" });
+  };
+
+  const saveCustomerFromBilling = async () => {
+    if (!customerForm.name.trim()) {
+      setCustomerErr("Customer name is required.");
+      return;
+    }
+    setCustomerSaving(true);
+    setCustomerErr("");
+    const payload = {
+      name: customerForm.name,
+      gender: customerForm.gender,
+      phone: customerForm.phone,
+      email: customerForm.email,
+      visits: Number(customerForm.visits || 0),
+      last_visit: customerForm.last_visit || today(),
+      has_membership: !!customerForm.has_membership,
+      membership_card_no: customerForm.membership_card_no,
+      membership_start: customerForm.membership_start || null,
+      membership_end: customerForm.membership_end || null,
+      notes: customerForm.notes,
+    };
+    const { data, error: err } = await supabase.from("customers").insert([payload]).select("*").single();
+    setCustomerSaving(false);
+    if (err) {
+      setCustomerErr(err.message);
+      return;
+    }
+    if (data?.id) {
+      setForm(prev => ({ ...prev, customer_id: data.id, pricing_type: data.has_membership ? "membership" : "general" }));
+    }
+    await reload();
+    setCustomerModal(false);
   };
 
   // ── build payload (shared by save & update) ─────────────────────────────────
@@ -1673,6 +1359,18 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
     setModal(null);
   };
 
+  const saveAndPrint = async () => {
+    const payload = buildPayload();
+    if (!payload) return;
+    setSaving(true); setApiErr("");
+    const { data, error: err } = await supabase.from("bills").insert([payload]).select().single();
+    setSaving(false);
+    if (err) { setApiErr(err.message); return; }
+    await reload();
+    setModal(null);
+    if (data) printBill(data);
+  };
+
   // ── update (edit) ───────────────────────────────────────────────────────────
   const update = async () => {
     const payload = buildPayload();
@@ -1684,6 +1382,19 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
     await reload();
     setModal(null);
     setEditBill(null);
+  };
+
+  const updateAndPrint = async () => {
+    const payload = buildPayload();
+    if (!payload || !editBill) return;
+    setSaving(true); setApiErr("");
+    const { data, error: err } = await supabase.from("bills").update(payload).eq("id", editBill.id).select().single();
+    setSaving(false);
+    if (err) { setApiErr(err.message); return; }
+    await reload();
+    setModal(null);
+    setEditBill(null);
+    if (data) printBill(data);
   };
 
   // ── delete ──────────────────────────────────────────────────────────────────
@@ -1709,6 +1420,185 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
       return [b.customer_name, b.employee_name, b.service_name, billNo(b)].some(v => String(v || "").toLowerCase().includes(q));
     })
     .sort((a, b) => `${a.bill_date}${a.bill_time}` < `${b.bill_date}${b.bill_time}` ? 1 : -1);
+
+  const billsByDate = {};
+  bills.forEach(b => {
+    if (!b.bill_date) return;
+    billsByDate[b.bill_date] = (billsByDate[b.bill_date] || 0) + 1;
+  });
+
+  const selectedTotal = bills
+    .filter(b => b.bill_date === dateFilter)
+    .reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+  const monthStr = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, "0")}`;
+  const monthTotal = bills
+    .filter(b => String(b.bill_date || "").startsWith(monthStr))
+    .reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+  const monthBills = bills
+    .filter(b => String(b.bill_date || "").startsWith(monthStr))
+    .sort((a, b) => `${a.bill_date}${a.bill_time}` > `${b.bill_date}${b.bill_time}` ? 1 : -1);
+  const monthCustomerCount = new Set(monthBills.map(b => b.customer_id || b.customer_name).filter(Boolean)).size;
+  const employeeTotals = employees
+    .map(emp => ({
+      name: emp.name,
+      bills: monthBills.filter(b => b.employee_id === emp.id),
+    }))
+    .map(row => ({
+      name: row.name,
+      count: row.bills.length,
+      total: row.bills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0),
+    }))
+    .filter(row => row.count > 0 || row.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  const downloadMonthlyBillsPdf = () => {
+    const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    const monthLabel = `${monthNames[calMonth.month]} ${calMonth.year}`;
+    const generatedOn = new Date().toLocaleString("en-IN");
+
+    const serviceCategories = {};
+    const paymentSummary = { Cash: 0, Card: 0, UPI: 0 };
+    const invoiceNumbers = [];
+    let totalNetSales = 0;
+
+    monthBills.forEach(b => {
+      const service = services.find(s => s.id === b.service_id) || {};
+      const category = service.category || "Other";
+      const gross = Number(b.total_amount || 0);
+      const gst = Number(b.gst_amount || 0);
+      const discount = Number(b.discount_amount || 0);
+      const net = gross - gst + discount;
+      totalNetSales += net;
+      serviceCategories[category] = serviceCategories[category] || { count: 0, gross: 0, gst: 0, discount: 0, net: 0 };
+      serviceCategories[category].count += 1;
+      serviceCategories[category].gross += gross;
+      serviceCategories[category].gst += gst;
+      serviceCategories[category].discount += discount;
+      serviceCategories[category].net += net;
+
+      const paymentMode = String(b.payment_mode || "Cash");
+      if (paymentMode in paymentSummary) paymentSummary[paymentMode] += net;
+      invoiceNumbers.push(b.invoice_no ? String(b.invoice_no).padStart(5, "0") : billNo(b));
+    });
+
+    const categoryRows = Object.entries(serviceCategories).map(([category, data]) => [
+      category,
+      data.count,
+      money(data.gross),
+      money(data.gst),
+      money(data.discount),
+      money(data.net),
+    ]);
+    const categoryTotals = Object.values(serviceCategories).reduce((acc, row) => ({
+      count: acc.count + row.count,
+      gross: acc.gross + row.gross,
+      gst: acc.gst + row.gst,
+      discount: acc.discount + row.discount,
+      net: acc.net + row.net,
+    }), { count: 0, gross: 0, gst: 0, discount: 0, net: 0 });
+
+    const paymentRow = [[
+      money(Math.round(totalNetSales)),
+      money(paymentSummary.Cash),
+      money(paymentSummary.Card),
+      money(paymentSummary.UPI),
+    ]];
+
+    const sortedInvoiceNumbers = invoiceNumbers.filter(Boolean).sort();
+    const openingBillNo = sortedInvoiceNumbers[0] || "-";
+    const closingBillNo = sortedInvoiceNumbers[sortedInvoiceNumbers.length - 1] || "-";
+
+    const employeeRows = employeeTotals.map(row => [row.name, row.count, money(row.total)]);
+    const employeeTotalValue = employeeTotals.reduce((sum, row) => sum + row.total, 0);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text("Monthly Bills Summary", 40, 42);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`Naturals Narasannpeta | ${monthLabel}`, 40, 60);
+    doc.text(`Generated: ${generatedOn}`, 40, 76);
+
+    autoTable(doc, {
+      startY: 96,
+      head: [["Month", "Bills", "Customers Visited", "Total Amount"]],
+      body: [[monthLabel, monthBills.length, monthCustomerCount, money(monthTotal)]],
+      theme: "grid",
+      styles: { fontSize: 9, cellPadding: 6 },
+      headStyles: { fillColor: [192, 132, 252], textColor: [13, 11, 20] },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 18,
+      head: [["Category", "No. of Services", "Gross Sales (with tax)", "GST", "Discount", "Net Sales (without tax and discount)"]],
+      body: categoryRows.length
+        ? [...categoryRows, ["Total", categoryTotals.count, money(categoryTotals.gross), money(categoryTotals.gst), money(categoryTotals.discount), money(categoryTotals.net)]]
+        : [["No category data", 0, money(0), money(0), money(0), money(0)]],
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 6, overflow: "linebreak" },
+      headStyles: { fillColor: [42, 37, 64] },
+      columnStyles: { 0: { cellWidth: 110 }, 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" } },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 18,
+      head: [["Rounded Net Sales", "Cash", "Card", "UPI"]],
+      body: paymentRow,
+      theme: "grid",
+      styles: { fontSize: 9, cellPadding: 6 },
+      headStyles: { fillColor: [96, 165, 250] },
+      columnStyles: { 0: { halign: "right" }, 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 18,
+      head: [["Opening Bill No", "Closing Bill No", "Total Bills"]],
+      body: [[openingBillNo, closingBillNo, monthBills.length]],
+      theme: "grid",
+      styles: { fontSize: 9, cellPadding: 6 },
+      headStyles: { fillColor: [37, 99, 235] },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 18,
+      head: [["Employee", "No. of Services", "Service Value"]],
+      body: employeeRows.length
+        ? [...employeeRows, ["Total", "", money(employeeTotalValue)]]
+        : [["No employees found", 0, money(0)]],
+      theme: "grid",
+      styles: { fontSize: 9, cellPadding: 6 },
+      headStyles: { fillColor: [249, 115, 22] },
+      columnStyles: { 1: { halign: "right" }, 2: { halign: "right" } },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 18,
+      head: [["Bill No", "Date", "Customer", "Staff", "Services", "GST", "Total"]],
+      body: monthBills.length
+        ? monthBills.map(b => [
+            `#${billNo(b)}`,
+            `${b.bill_date || "-"} ${String(b.bill_time || "").slice(0, 5)}`,
+            b.customer_name || getName(customers, b.customer_id),
+            b.employee_name || getName(employees, b.employee_id),
+            b.service_name || getName(services, b.service_id),
+            money(b.gst_amount),
+            money(b.total_amount),
+          ])
+        : [["No bills found", "-", "-", "-", "-", money(0), money(0)]],
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 5, overflow: "linebreak" },
+      headStyles: { fillColor: [22, 19, 31] },
+      columnStyles: {
+        0: { cellWidth: 58 },
+        1: { cellWidth: 82 },
+        4: { cellWidth: 220 },
+        5: { halign: "right" },
+        6: { halign: "right" },
+      },
+    });
+
+    doc.save(`monthly-bills-${monthStr}.pdf`);
+  };
 
   // ── Invoice component ───────────────────────────────────────────────────────
   const Invoice = ({ bill, printMode = false }) => {
@@ -1823,10 +1713,13 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
     <>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Customer">
-          <select style={IS} value={form.customer_id} onChange={e => updateCustomer(e.target.value)}>
-            <option value="">- select -</option>
-            {customers.map(c => <option key={c.id} value={c.id}>{c.name}{c.has_membership ? " (Member)" : ""}</option>)}
-          </select>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+            <select style={IS} value={form.customer_id} onChange={e => updateCustomer(e.target.value)}>
+              <option value="">- select -</option>
+              {customers.map(c => <option key={c.id} value={c.id}>{c.name}{c.has_membership ? " (Member)" : ""}</option>)}
+            </select>
+            <Btn small ghost onClick={openCustomerModal}><Icon d={I.add} size={13} /> Add</Btn>
+          </div>
         </Field>
         <Field label="Staff">
           <select style={IS} value={form.employee_id} onChange={e => setForm({ ...form, employee_id: e.target.value })}>
@@ -1854,17 +1747,27 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
             const selected = services.find(s => s.id === item.service_id);
             const choices  = services.filter(s => s.is_active && (!q || s.name.toLowerCase().includes(q) || (s.category || "").toLowerCase().includes(q)));
             return (
-              <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr auto", gap: 8, alignItems: "center" }}>
-                <input
-                  placeholder="Search service..."
-                  style={IS}
-                  value={serviceSearch[index] || ""}
-                  onChange={e => setServiceSearch(serviceSearch.map((v, i) => i === index ? e.target.value : v))}
-                />
-                <select style={IS} value={item.service_id} onChange={e => updateItem(index, e.target.value)}>
-                  <option value="">- select -</option>
-                  {choices.map(s => <option key={s.id} value={s.id}>{s.name} - {money(priceFor(s))}</option>)}
-                </select>
+              <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", position: "relative" }}>
+                <div style={{ position: "relative", width: "100%" }}>
+                  <button onClick={() => setServiceOpen(serviceOpen.map((v, i) => i === index ? !v : v))} style={{ ...IS, textAlign: "left", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span>{selected ? `${selected.name} - ${money(priceFor(selected))}` : "- select -"}</span>
+                    <span style={{ color: "var(--muted)", fontSize: ".85rem" }}>▾</span>
+                  </button>
+                  {serviceOpen[index] && (
+                    <div style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 6px)", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, zIndex: 80 }}>
+                      <input placeholder="Search services..." style={{ ...IS, marginBottom: 8 }} value={serviceSearch[index] || ""} onChange={e => setServiceSearch(serviceSearch.map((v, i) => i === index ? e.target.value : v))} />
+                      <div style={{ maxHeight: 220, overflow: "auto" }}>
+                        {choices.length === 0 && <div style={{ color: "var(--muted)", padding: 8 }}>No services found.</div>}
+                        {choices.map(s => (
+                          <div key={s.id} onClick={() => { updateItem(index, s.id); setServiceOpen(serviceOpen.map((v, i) => i === index ? false : v)); }} style={{ padding: "8px", cursor: "pointer", borderRadius: 6, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                            <div style={{ fontWeight: 700 }}>{s.name}</div>
+                            <div style={{ color: "var(--muted)" }}>{money(priceFor(s))}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <button
                   onClick={() => items.length > 1 && removeItem(index)}
                   disabled={items.length === 1}
@@ -1884,7 +1787,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-        <Field label="Date"><input type="date" style={IS} value={form.bill_date} onChange={e => setForm({ ...form, bill_date: e.target.value })} /></Field>
+        <Field label="Date"><input type="date" style={IS} value={form.bill_date} onChange={e => setForm({ ...form, bill_date: e.target.value })} onMouseEnter={e => e.target.showPicker?.()} /></Field>
         <Field label="Time"><input type="time" style={IS} value={form.bill_time} onChange={e => setForm({ ...form, bill_time: e.target.value })} /></Field>
         <Field label="Payment">
           <select style={IS} value={form.payment_mode} onChange={e => setForm({ ...form, payment_mode: e.target.value })}>
@@ -1924,11 +1827,68 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
   // ── render ──────────────────────────────────────────────────────────────────
   return (
     <div>
+      {/* Calendar */}
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: "1rem", alignItems: "start", marginBottom: "1rem" }}>
+        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <button onClick={prevMonth} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex" }}>
+              <Icon d="M15 18l-6-6 6-6" size={16} />
+            </button>
+            <h4 style={{ margin: 0, fontSize: ".88rem", fontWeight: 700, color: "var(--text)" }}>
+              {monthNames[calMonth.month]} {calMonth.year}
+            </h4>
+            <button onClick={nextMonth} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex" }}>
+              <Icon d="M9 18l6-6-6-6" size={16} />
+            </button>
+          </div>
+          <div style={{ padding: "1rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", marginBottom: 6 }}>
+              {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d => (
+                <div key={d} style={{ textAlign: "center", fontSize: ".68rem", fontWeight: 700, color: "var(--muted)", padding: "2px 0" }}>{d}</div>
+              ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2 }}>
+              {Array(firstDayOfMonth(calMonth.year, calMonth.month)).fill(null).map((_, i) => (
+                <div key={`e${i}`} />
+              ))}
+              {Array(daysInMonth(calMonth.year, calMonth.month)).fill(null).map((_, i) => {
+                const day = i + 1;
+                const dateStr = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                const isSelected = dateStr === dateFilter;
+                const isToday = dateStr === today();
+                const hasBills = billsByDate[dateStr] > 0;
+                return (
+                  <button key={day} onClick={() => setDateFilter(dateStr)}
+                    style={{
+                      position: "relative", width: "100%", aspectRatio: "1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                      borderRadius: 8, border: isToday ? "1px solid var(--accent)" : "1px solid transparent",
+                      background: isSelected ? "var(--accent)" : "none",
+                      color: isSelected ? "var(--bg)" : isToday ? "var(--accent)" : "var(--text)",
+                      cursor: "pointer", fontWeight: isToday || isSelected ? 700 : 500, fontSize: ".82rem",
+                    }}>
+                    {day}
+                    {hasBills && !isSelected && (
+                      <div style={{ position: "absolute", bottom: 3, width: 4, height: 4, borderRadius: "50%", background: "var(--accent)" }} />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{ padding: "0 1rem 1rem", borderTop: "1px solid var(--border)", paddingTop: "0.875rem", marginTop: "-1px" }}>
+            <div style={{ fontSize: ".75rem", color: "var(--muted)", marginBottom: 4 }}>Selected: <strong style={{ color: "var(--text)" }}>{dateFilter}</strong></div>
+            <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>Bills: <strong style={{ color: "var(--accent)" }}>{filtered.length}</strong></div>
+            <div style={{ fontSize: ".75rem", color: "var(--muted)", marginTop: 2 }}>Day total: <strong style={{ color: "#34d399" }}>{money(selectedTotal)}</strong></div>
+            <div style={{ fontSize: ".75rem", color: "var(--muted)", marginTop: 2 }}>Month total: <strong style={{ color: "#60a5fa" }}>{money(monthTotal)}</strong></div>
+          </div>
+        </div>
+
+        <div>
       {/* Toolbar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} style={{ ...IS, width: 165 }} />
           <input placeholder="Search bill / customer..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...IS, width: 220 }} />
+          <Btn ghost onClick={downloadMonthlyBillsPdf}><Icon d={I.print} size={15} /> Monthly Bills</Btn>
           <Btn onClick={openAdd}><Icon d={I.add} size={15} /> New Bill</Btn>
         </div>
       </div>
@@ -1987,6 +1947,8 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
           </tbody>
         </table>
       </div>
+        </div>
+      </div>
 
       {/* Add modal */}
       {modal === "add" && (
@@ -1995,6 +1957,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Btn ghost onClick={() => setModal(null)}>Cancel</Btn>
             <Btn onClick={save} disabled={saving}>{saving ? "Saving..." : "Save Bill"}</Btn>
+            <Btn onClick={saveAndPrint} disabled={saving}><Icon d={I.print} size={13} /> {saving ? "Saving..." : "Save & Print"}</Btn>
           </div>
         </Modal>
       )}
@@ -2006,6 +1969,62 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Btn ghost onClick={() => { setModal(null); setEditBill(null); }}>Cancel</Btn>
             <Btn onClick={update} disabled={saving}>{saving ? "Saving..." : "Update Bill"}</Btn>
+            <Btn onClick={updateAndPrint} disabled={saving}><Icon d={I.print} size={13} /> {saving ? "Saving..." : "Update & Print"}</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {customerModal && (
+        <Modal title="Add Customer" onClose={() => setCustomerModal(false)}>
+          <Field label="Full Name">
+            <input style={IS} value={customerForm.name} onChange={e => setCustomerForm({ ...customerForm, name: e.target.value })} placeholder="Customer name" />
+          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Gender">
+              <select style={IS} value={customerForm.gender} onChange={e => setCustomerForm({ ...customerForm, gender: e.target.value })}>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="other">Other</option>
+              </select>
+            </Field>
+            <Field label="Last Visit">
+              <input type="date" style={IS} value={customerForm.last_visit} onChange={e => setCustomerForm({ ...customerForm, last_visit: e.target.value })} onMouseEnter={e => e.target.showPicker?.()} />
+            </Field>
+          </div>
+          <Field label="Phone">
+            <input style={IS} value={customerForm.phone} onChange={e => setCustomerForm({ ...customerForm, phone: e.target.value })} placeholder="Phone number" />
+          </Field>
+          <Field label="Email">
+            <input style={IS} value={customerForm.email} onChange={e => setCustomerForm({ ...customerForm, email: e.target.value })} placeholder="Email address" />
+          </Field>
+          <Field label="Membership">
+            <label style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text)", fontSize: ".88rem", fontWeight: 700 }}>
+              <input type="checkbox" checked={!!customerForm.has_membership} onChange={e => setCustomerForm({ ...customerForm, has_membership: e.target.checked })} />
+              Customer has membership
+            </label>
+          </Field>
+          {customerForm.has_membership && (
+            <>
+              <Field label="Membership Card No.">
+                <input style={IS} value={customerForm.membership_card_no} onChange={e => setCustomerForm({ ...customerForm, membership_card_no: e.target.value })} />
+              </Field>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <Field label="Membership Start">
+                  <input type="date" style={IS} value={customerForm.membership_start} onChange={e => setCustomerForm({ ...customerForm, membership_start: e.target.value })} onMouseEnter={e => e.target.showPicker?.()} />
+                </Field>
+                <Field label="Membership End">
+                  <input type="date" style={IS} value={customerForm.membership_end} onChange={e => setCustomerForm({ ...customerForm, membership_end: e.target.value })} onMouseEnter={e => e.target.showPicker?.()} />
+                </Field>
+              </div>
+            </>
+          )}
+          <Field label="Notes">
+            <textarea style={{ ...IS, minHeight: 68, resize: "vertical" }} value={customerForm.notes} onChange={e => setCustomerForm({ ...customerForm, notes: e.target.value })} placeholder="Optional notes..." />
+          </Field>
+          {customerErr && <ErrBox msg={customerErr} />}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Btn ghost onClick={() => setCustomerModal(false)}>Cancel</Btn>
+            <Btn onClick={saveCustomerFromBilling} disabled={customerSaving}>{customerSaving ? "Saving..." : "Save Customer"}</Btn>
           </div>
         </Modal>
       )}
@@ -2036,12 +2055,12 @@ export default function App() {
   const [profile, setProfile]         = useState(null);
   const [tab, setTab]                 = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [theme, setTheme]             = useState("dark");
   const [dataLoading, setDataLoading] = useState(false);
 
   const [employees,    setEmployees]    = useState([]);
   const [customers,    setCustomers]    = useState([]);
   const [services,     setServices]     = useState([]);
-  const [appointments, setAppointments] = useState([]);
   const [bills,        setBills]        = useState([]);
 
   useEffect(() => {
@@ -2062,17 +2081,15 @@ export default function App() {
 
   const loadData = useCallback(async () => {
     setDataLoading(true);
-    const [er, cr, sr, ar, br] = await Promise.all([
+    const [er, cr, sr, br] = await Promise.all([
       supabase.from("employees").select("*").order("name"),
       supabase.from("customers").select("*").order("name"),
       supabase.from("services").select("*").order("name"),
-      supabase.from("appointments").select("*").order("date", { ascending: false }),
-      supabase.from("bills").select("*").order("bill_date", { ascending: false }),
+      supabase.from("bills").select("*").order("bill_date", { ascending: false }).range(0, 9999),
     ]);
     setEmployees(er.data || []);
     setCustomers(cr.data || []);
     setServices(sr.data || []);
-    setAppointments(ar.data || []);
     setBills(br.data || []);
     setDataLoading(false);
   }, []);
@@ -2082,12 +2099,11 @@ export default function App() {
   const isAdmin  = profile?.is_admin ?? false;
   const userName = profile?.name || session?.user?.email || "User";
   const userRole = profile?.role || "Staff";
-  const todayCount = appointments.filter(a => a.date === today() && a.status !== "cancelled").length;
+  const todayCount = bills.filter(b => b.bill_date === today()).length;
 
   // Nav items — dashboard label changes by role
   const nav = [
     { id: "dashboard",    label: isAdmin ? "Owner Dashboard" : "My Dashboard", icon: I.dash },
-    { id: "appointments", label: "Appointments",  icon: I.appt },
     { id: "billing",      label: "Billing",       icon: I.bill },
     { id: "employees",    label: "Employees",     icon: I.emp  },
     { id: "customers",    label: "Customers",     icon: I.cust },
@@ -2111,15 +2127,13 @@ export default function App() {
   return (
     <>
       <style>{CSS}</style>
-      <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+      <div data-theme={theme} style={{ display: "flex", height: "100vh", overflow: "hidden", background: "var(--bg)", color: "var(--text)" }}>
 
         {/* Sidebar */}
         <aside style={{ width: sidebarOpen ? 224 : 0, minWidth: sidebarOpen ? 224 : 0, background: "var(--card)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", transition: "all .25s", overflow: "hidden" }}>
           <div style={{ padding: "1.5rem 1.25rem 1rem", borderBottom: "1px solid var(--border)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Icon d={I.scissors} size={18} />
-              </div>
+              
               <div>
                 <div style={{ fontFamily: "'Playfair Display',serif", fontWeight: 800, fontSize: "1rem", color: "var(--text)", whiteSpace: "nowrap" }}>Naturals Narasannpeta</div>
                 <div style={{ fontSize: ".68rem", color: "var(--muted)", whiteSpace: "nowrap" }}>Salon Manager</div>
@@ -2134,9 +2148,6 @@ export default function App() {
                 <button key={n.id} onClick={() => setTab(n.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", borderRadius: 10, border: "none", background: active ? "rgba(192,132,252,.15)" : "none", color: active ? "var(--accent)" : "var(--muted)", cursor: "pointer", fontWeight: active ? 700 : 500, fontSize: ".87rem", textAlign: "left", marginBottom: 2, whiteSpace: "nowrap", position: "relative" }}>
                   <Icon d={n.icon} size={16} />
                   {n.label}
-                  {n.id === "appointments" && todayCount > 0 && (
-                    <span style={{ marginLeft: "auto", background: "var(--accent)", color: "var(--bg)", borderRadius: 99, fontSize: ".68rem", fontWeight: 800, padding: "1px 7px" }}>{todayCount}</span>
-                  )}
                 </button>
               );
             })}
@@ -2171,18 +2182,20 @@ export default function App() {
                 ? <span style={{ background: "rgba(192,132,252,.12)", color: "var(--accent)", padding: "4px 12px", borderRadius: 99, fontWeight: 700, fontSize: ".78rem", display: "flex", alignItems: "center", gap: 5 }}><Icon d={I.shield} size={12} /> Owner</span>
                 : <span style={{ background: "rgba(52,211,153,.08)", color: "#34d399", padding: "4px 12px", borderRadius: 99, fontWeight: 700, fontSize: ".78rem", display: "flex", alignItems: "center", gap: 5 }}><Icon d={I.emp} size={12} /> Staff</span>
               }
+              <button
+                onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
+                style={{ border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", padding: "5px 12px", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontSize: ".78rem", fontFamily: "inherit" }}
+              >
+                {theme === "dark" ? "Light" : "Dark"}
+              </button>
               <span style={{ background: "rgba(255,255,255,.05)", color: "var(--muted)", padding: "4px 12px", borderRadius: 99, fontSize: ".78rem" }}>{employees.length} staff · {customers.length} clients</span>
             </div>
           </header>
 
           <main style={{ flex: 1, overflowY: "auto", padding: "1.5rem" }}>
             {tab === "dashboard" && isAdmin && (
-              <OwnerDashboard employees={employees} customers={customers} services={services} appointments={appointments} />
+              <OwnerDashboard employees={employees} customers={customers} services={services} bills={bills} />
             )}
-            {tab === "dashboard" && !isAdmin && (
-              <StaffDashboard employees={employees} customers={customers} services={services} appointments={appointments} profile={profile} />
-            )}
-            {tab === "appointments" && <Appointments appointments={appointments} reload={loadData} employees={employees} customers={customers} services={services} isAdmin={isAdmin} />}
             {tab === "billing"      && <Billing      bills={bills} reload={loadData} employees={employees} customers={customers} services={services} isAdmin={isAdmin} />}
             {tab === "employees"    && <Employees    employees={employees}    reload={loadData} isAdmin={isAdmin} />}
             {tab === "customers"    && <Customers    customers={customers}    reload={loadData} isAdmin={isAdmin} />}
