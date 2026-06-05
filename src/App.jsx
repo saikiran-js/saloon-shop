@@ -17,10 +17,10 @@ const STATUS_COLORS = {
 // ─────────────────────────────────────────────────────────────
 // ICONS
 // ─────────────────────────────────────────────────────────────
-const Icon = ({ d, size = 18 }) => (
+const Icon = ({ d, size = 18, style }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
     stroke="currentColor" strokeWidth="2" strokeLinecap="round"
-    strokeLinejoin="round" style={{ flexShrink: 0 }}>
+    strokeLinejoin="round" style={{ flexShrink: 0, ...style }}>
     <path d={d} />
   </svg>
 );
@@ -363,7 +363,7 @@ function StaffDashboard({ employees, customers, services, appointments, profile 
           <p style={{ color: "var(--muted)", fontSize: ".85rem" }}>Daily appointments & sales performance</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Icon d={I.calendar} size={16} style={{ color: "var(--muted)" }} />
+          <Icon d={I.calendar} size={16} style={{ color: "#fff" }} />
           <input type="date" value={selectedDate}
             onChange={e => setSelectedDate(e.target.value)}
             style={{ ...IS, width: 180 }} />
