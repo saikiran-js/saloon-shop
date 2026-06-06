@@ -2206,21 +2206,19 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
               Customer has membership
             </label>
           </Field>
-          {customerForm.has_membership && (
-            <>
-              <Field label="Membership Card No.">
-                <input style={IS} value={customerForm.membership_card_no} onChange={e => setCustomerForm({ ...customerForm, membership_card_no: e.target.value })} />
+          <>
+            <Field label="Membership Card No.">
+              <input style={IS} value={customerForm.membership_card_no} onChange={e => setCustomerForm({ ...customerForm, membership_card_no: e.target.value, has_membership: !!e.target.value })} />
+            </Field>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Field label="Membership Start">
+                <input type="date" style={IS} value={customerForm.membership_start} onChange={e => setCustomerForm({ ...customerForm, membership_start: e.target.value, has_membership: !!e.target.value })} onMouseEnter={e => e.target.showPicker?.()} />
               </Field>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <Field label="Membership Start">
-                  <input type="date" style={IS} value={customerForm.membership_start} onChange={e => setCustomerForm({ ...customerForm, membership_start: e.target.value })} onMouseEnter={e => e.target.showPicker?.()} />
-                </Field>
-                <Field label="Membership End">
-                  <input type="date" style={IS} value={customerForm.membership_end} onChange={e => setCustomerForm({ ...customerForm, membership_end: e.target.value })} onMouseEnter={e => e.target.showPicker?.()} />
-                </Field>
-              </div>
-            </>
-          )}
+              <Field label="Membership End">
+                <input type="date" style={IS} value={customerForm.membership_end} onChange={e => setCustomerForm({ ...customerForm, membership_end: e.target.value, has_membership: !!e.target.value })} onMouseEnter={e => e.target.showPicker?.()} />
+              </Field>
+            </div>
+          </>
           <Field label="Notes">
             <textarea style={{ ...IS, minHeight: 68, resize: "vertical" }} value={customerForm.notes} onChange={e => setCustomerForm({ ...customerForm, notes: e.target.value })} placeholder="Optional notes..." />
           </Field>
