@@ -1002,7 +1002,7 @@ function Customers({ customers, bills, reload, isAdmin }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
           <thead>
             <tr style={{ background: "var(--bg)" }}>
-              {["Customer", "Contact", "DOB", "Last Visit", "Notes", ""].map(h => (
+              {["Customer", "Contact", "DOB", "Notes", ""].map(h => (
                 <th key={h} style={{ textAlign: "left", padding: "11px 14px", color: "var(--muted)", fontWeight: 600, fontSize: ".75rem", textTransform: "uppercase", letterSpacing: ".05em", borderBottom: "1px solid var(--border)" }}>{h}</th>
               ))}
             </tr>
@@ -1020,7 +1020,7 @@ function Customers({ customers, bills, reload, isAdmin }) {
                 </td>
                 <td style={{ padding: "12px 14px", color: "var(--muted)" }}><div>{c.phone}</div><div style={{ fontSize: ".78rem" }}>{c.email}</div></td>
                 <td style={{ padding: "12px 14px", color: "var(--muted)", whiteSpace: "nowrap" }}>{c.dob || "-"}</td>
-                <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{c.last_visit}</td>
+                
                 <td style={{ padding: "12px 14px", color: "var(--muted)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes || "—"}</td>
                 <td style={{ padding: "12px 14px" }}>
                   <div style={{ display: "flex", gap: 6 }}>
