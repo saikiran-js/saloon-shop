@@ -323,7 +323,7 @@ function ForgotPage({ onBack }) {
 // OWNER DASHBOARD — Staff, Customers, Calendar + Performance
 // ─────────────────────────────────────────────────────────────
 function OwnerDashboard({ employees, customers, services, bills }) {
-  const [selectedDate, setSelectedDate] = useState(today());
+  const [selectedRange, setSelectedRange] = useState({ start: today(), end: today() });
   const [calMonth, setCalMonth] = useState(() => {
     const d = new Date();
     return { year: d.getFullYear(), month: d.getMonth() };
@@ -355,8 +355,33 @@ function OwnerDashboard({ employees, customers, services, bills }) {
     apptsByDate[b.bill_date] = (apptsByDate[b.bill_date] || 0) + 1;
   });
 
-  // Staff performance for selected date (based on bills)
-  const dayBills = bills.filter(b => b.bill_date === selectedDate);
+  const { start: selectedStart, end: selectedEnd } = selectedRange;
+  const selectDashboardDate = (dateStr) => {
+    if (!selectedStart || !selectedEnd || selectedStart !== selectedEnd) {
+      setSelectedRange({ start: dateStr, end: dateStr });
+      return;
+    }
+    if (dateStr >= selectedStart) {
+      setSelectedRange({ start: selectedStart, end: dateStr });
+    } else {
+      setSelectedRange({ start: dateStr, end: selectedStart });
+    }
+  };
+
+  const selectedDates = [];
+  if (selectedStart && selectedEnd) {
+    const start = new Date(selectedStart);
+    const end = new Date(selectedEnd);
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      selectedDates.push(d.toISOString().slice(0, 10));
+    }
+  }
+  const selectedMonthDays = new Set(selectedDates.map(d => d.slice(5)));
+  const birthdayCustomers = customers.filter(c => c.dob && selectedMonthDays.has(c.dob.slice(5)));
+  const birthdayCount = birthdayCustomers.length;
+
+  // Staff performance for selected date range (based on bills)
+  const dayBills = bills.filter(b => b.bill_date >= selectedStart && b.bill_date <= selectedEnd);
 
   const staffPerformance = employees
     .filter(e => e.status === "active")
@@ -437,6 +462,7 @@ function OwnerDashboard({ employees, customers, services, bills }) {
          <StatCard label="Today's Revenue" value={fmt(totalDayRevenue)} sub="completed payments" accent="#34d399" />
          <StatCard label="This Month Revenue" value={fmt(monthRevenue)} sub={`${monthNames[calMonth.month]} revenue`} accent="var(--accent)" />
          <StatCard label="Customers Today" value={customersTodayCount} sub="unique visitors" accent="#60a5fa" />
+         <StatCard label="Birthdays" value={birthdayCount} sub={selectedStart === selectedEnd ? `on ${selectedStart}` : `in selected range`} accent="#fbbf24" />
          <StatCard label="Customers This Month" value={customersMonthCount} sub={`${monthNames[calMonth.month]} visitors`} accent="#f59e0b" />
        </div>
      </div>
@@ -472,11 +498,11 @@ function OwnerDashboard({ employees, customers, services, bills }) {
               {Array(daysInMonth(calMonth.year, calMonth.month)).fill(null).map((_, i) => {
                 const day = i + 1;
                 const dateStr = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                const isSelected = dateStr === selectedDate;
+                const isSelected = dateStr >= selectedStart && dateStr <= selectedEnd;
                 const isToday    = dateStr === today();
                 const hasAppts   = apptsByDate[dateStr] > 0;
                 return (
-                  <button key={day} onClick={() => setSelectedDate(dateStr)}
+                  <button key={day} onClick={() => selectDashboardDate(dateStr)}
                     style={{
                       position: "relative", width: "100%", aspectRatio: "1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
                       borderRadius: 8, border: isToday ? "1px solid var(--accent)" : "1px solid transparent",
@@ -494,7 +520,9 @@ function OwnerDashboard({ employees, customers, services, bills }) {
             </div>
           </div>
           <div style={{ padding: "0 1rem 1rem", borderTop: "1px solid var(--border)", paddingTop: "0.875rem", marginTop: "-1px" }}>
-            <div style={{ fontSize: ".75rem", color: "var(--muted)", marginBottom: 4 }}>Selected: <strong style={{ color: "var(--text)" }}>{selectedDate}</strong></div>
+            <div style={{ fontSize: ".75rem", color: "var(--muted)", marginBottom: 4 }}>
+            Selected: <strong style={{ color: "var(--text)" }}>{selectedStart === selectedEnd ? selectedStart : `${selectedStart} – ${selectedEnd}`}</strong>
+          </div>
             <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>Month revenue: <strong style={{ color: "var(--accent)" }}>{fmt(monthRevenue)}</strong></div>
             <div style={{ fontSize: ".75rem", color: "var(--muted)", marginTop: 2 }}>Day total: <strong style={{ color: "#34d399" }}>{fmt(totalDayRevenue)}</strong></div>
           </div>
@@ -504,7 +532,7 @@ function OwnerDashboard({ employees, customers, services, bills }) {
         <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
           <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h4 style={{ margin: 0, fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>
-              Daily Performance — {selectedDate}
+              Period Performance — {selectedStart === selectedEnd ? selectedStart : `${selectedStart} – ${selectedEnd}`}
             </h4>
           </div>
 
@@ -734,7 +762,7 @@ function Employees({ employees, reload, isAdmin }) {
   const [deleting, setDeleting]   = useState(false);
   const [apiErr, setApiErr]       = useState("");
 
-  const blank = { name: "", role: "", gender: "other", phone: "", email: "", joined_date: today(), status: "active", salary: 0, target_amount: 0 };
+  const blank = { name: "", emp_id: "", role: "", gender: "other", phone: "", email: "", dob: "", joined_date: today(), status: "active", salary: 0, target_amount: 0 };
   const [form, setForm] = useState(blank);
 
   const openAdd  = () => { setForm(blank); setApiErr(""); setModal("add"); };
@@ -743,7 +771,7 @@ function Employees({ employees, reload, isAdmin }) {
   const save = async () => {
     if (!form.name.trim()) return;
     setSaving(true); setApiErr("");
-    const payload = { name: form.name, role: form.role, gender: form.gender, phone: form.phone, email: form.email, joined_date: form.joined_date, status: form.status, salary: Number(form.salary || 0), target_amount: Number(form.target_amount || 0) };
+    const payload = { emp_id: form.emp_id || null, name: form.name, role: form.role, gender: form.gender, phone: form.phone, email: form.email, dob: form.dob || null, joined_date: form.joined_date, status: form.status, salary: Number(form.salary || 0), target_amount: Number(form.target_amount || 0) };
     let err;
     if (modal === "add") ({ error: err } = await supabase.from("employees").insert([payload]));
     else ({ error: err } = await supabase.from("employees").update(payload).eq("id", form.id));
@@ -786,40 +814,76 @@ function Employees({ employees, reload, isAdmin }) {
         <StatCard label="Female" value={femaleCount} sub="employees" accent="#f472b6" icon={I.cust} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(270px,1fr))", gap: "1rem" }}>
-        {filtered.map(emp => (
-          <div key={emp.id} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: "1.25rem", position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "var(--accent)", opacity: .5 }} />
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-              <div style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(192,132,252,.15)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Playfair Display',serif", fontSize: "1.2rem", fontWeight: 700, color: "var(--accent)" }}>
-                {emp.name.charAt(0)}
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => openEdit(emp)} disabled={!isAdmin} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: isAdmin ? "pointer" : "not-allowed", color: "var(--muted)", opacity: isAdmin ? 1 : .4, display: "flex" }}><Icon d={I.edit} size={13} /></button>
-                <button onClick={() => isAdmin && setConfirmId(emp.id)} disabled={!isAdmin} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: isAdmin ? "pointer" : "not-allowed", color: "#e53e3e", opacity: isAdmin ? 1 : .4, display: "flex" }}><Icon d={I.del} size={13} /></button>
-              </div>
-            </div>
-            <div style={{ fontWeight: 700, fontSize: ".95rem", color: "var(--text)" }}>{emp.name}</div>
-            <div style={{ color: "var(--accent)", fontSize: ".82rem", fontWeight: 600, marginBottom: 10 }}>{emp.role} · {emp.gender || "other"}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              {emp.phone && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>📞 {emp.phone}</div>}
-              {emp.email && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>✉️ {emp.email}</div>}
-              {emp.joined_date && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>📅 Since {emp.joined_date}</div>}
-              {emp.salary > 0 && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>Salary: {fmt(emp.salary)}/mo</div>}
-              {Number(emp.target_amount || 0) > 0 && <div style={{ fontSize: ".8rem", color: "var(--muted)" }}>Target: {fmt(emp.target_amount)}</div>}
-            </div>
-            <div style={{ marginTop: 10 }}>
-              <span style={{ fontSize: ".74rem", fontWeight: 700, padding: "2px 10px", borderRadius: 99, background: emp.status === "active" ? "rgba(52,211,153,.15)" : "rgba(156,163,175,.15)", color: emp.status === "active" ? "#34d399" : "#9ca3af" }}>{emp.status}</span>
-            </div>
-          </div>
-        ))}
-        {filtered.length === 0 && <div style={{ color: "var(--muted)", fontSize: ".88rem", gridColumn: "1/-1", padding: "2rem 0" }}>No employees found.</div>}
+      <div style={{ overflowX: "auto", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14 }}>
+        <table style={{ width: "100%", minWidth: 980, borderCollapse: "separate", borderSpacing: 0 }}>
+          <thead style={{ background: "rgba(148,163,184,.08)" }}>
+            <tr>
+              <th style={{ padding: "12px 10px", textAlign: "left", fontSize: ".78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".08em" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Icon d={I.dash} size={14} />#</span>
+              </th>
+              <th style={{ padding: "12px 10px", textAlign: "left", fontSize: ".78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".08em" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Icon d={I.emp} size={14} />Emp ID</span>
+              </th>
+              <th style={{ padding: "12px 10px", textAlign: "left", fontSize: ".78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".08em" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Icon d={I.cust} size={14} />First Name</span>
+              </th>
+              <th style={{ padding: "12px 10px", textAlign: "left", fontSize: ".78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".08em" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Icon d={I.serv} size={14} />Specialisation</span>
+              </th>
+              <th style={{ padding: "12px 10px", textAlign: "left", fontSize: ".78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".08em" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Icon d={I.appt} size={14} />Mobile</span>
+              </th>
+              <th style={{ padding: "12px 10px", textAlign: "left", fontSize: ".78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".08em" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Icon d={I.emp} size={14} />Gender</span>
+              </th>
+              <th style={{ padding: "12px 10px", textAlign: "left", fontSize: ".78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".08em" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Icon d={I.calendar} size={14} />DOB</span>
+              </th>
+              <th style={{ padding: "12px 10px", textAlign: "left", fontSize: ".78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".08em" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Icon d={I.calendar} size={14} />DOJ</span>
+              </th>
+              <th style={{ padding: "12px 10px", textAlign: "left", fontSize: ".78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".08em" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Icon d={I.shield} size={14} />Status</span>
+              </th>
+              <th style={{ padding: "12px 10px", textAlign: "right", fontSize: ".78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".08em" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}><Icon d={I.menu} size={14} />Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={10} style={{ padding: "1.5rem", textAlign: "center", color: "var(--muted)" }}>No employees found.</td>
+              </tr>
+            ) : filtered.map((emp, index) => (
+              <tr key={emp.id} style={{ borderTop: "1px solid var(--border)" }}>
+                <td style={{ padding: "12px 10px", color: "var(--muted)", whiteSpace: "nowrap" }}>{index + 1}</td>
+                <td style={{ padding: "12px 10px", color: "var(--text)", whiteSpace: "nowrap" }}>{emp.emp_id || "-"}</td>
+                <td style={{ padding: "12px 10px", color: "var(--text)" }}>{emp.name}</td>
+                <td style={{ padding: "12px 10px", color: "var(--muted)" }}>{emp.role || "-"}</td>
+                <td style={{ padding: "12px 10px", color: "var(--muted)", whiteSpace: "nowrap" }}>{emp.phone || "-"}</td>
+                <td style={{ padding: "12px 10px", color: "var(--muted)", whiteSpace: "nowrap" }}>{String(emp.gender || "").charAt(0).toUpperCase() || "-"}</td>
+                <td style={{ padding: "12px 10px", color: "var(--muted)", whiteSpace: "nowrap" }}>{emp.dob || "-"}</td>
+                <td style={{ padding: "12px 10px", color: "var(--muted)", whiteSpace: "nowrap" }}>{emp.joined_date || "-"}</td>
+                <td style={{ padding: "12px 10px", color: emp.status === "active" ? "#16a34a" : "#6b7280", whiteSpace: "nowrap" }}>{emp.status}</td>
+                <td style={{ padding: "12px 10px", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <button onClick={() => openEdit(emp)} disabled={!isAdmin} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 8px", cursor: isAdmin ? "pointer" : "not-allowed", color: "var(--muted)", opacity: isAdmin ? 1 : .4, display: "flex" }}><Icon d={I.edit} size={13} /></button>
+                  <button onClick={() => isAdmin && setConfirmId(emp.id)} disabled={!isAdmin} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "5px 8px", cursor: isAdmin ? "pointer" : "not-allowed", color: "#e53e3e", opacity: isAdmin ? 1 : .4, display: "flex" }}><Icon d={I.del} size={13} /></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {(modal === "add" || modal?.edit) && isAdmin && (
         <Modal title={modal === "add" ? "Add Employee" : "Edit Employee"} onClose={() => setModal(null)}>
           <Field label="Full Name"><input style={IS} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Full name" /></Field>
           <Field label="Role"><input style={IS} value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} placeholder="e.g. Senior Stylist" /></Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Employee ID"><input style={IS} value={form.emp_id} onChange={e => setForm({ ...form, emp_id: e.target.value })} placeholder="Employee ID" /></Field>
+            <Field label="Date of Birth"><input type="date" style={IS} value={form.dob} onChange={e => setForm({ ...form, dob: e.target.value })} onMouseEnter={e => e.target.showPicker?.()} /></Field>
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Field label="Gender">
               <select style={IS} value={form.gender || "other"} onChange={e => setForm({ ...form, gender: e.target.value })}>
@@ -869,7 +933,7 @@ function Customers({ customers, reload, isAdmin }) {
   const [deleting, setDeleting]   = useState(false);
   const [apiErr, setApiErr]       = useState("");
 
-  const blank = { name: "", gender: "other", phone: "", email: "", visits: 0, last_visit: today(), has_membership: false, membership_card_no: "", membership_start: "", membership_end: "", notes: "" };
+  const blank = { name: "", dob: "", gender: "other", phone: "", email: "", visits: 0, last_visit: today(), has_membership: false, membership_card_no: "", membership_start: "", membership_end: "", notes: "" };
   const [form, setForm] = useState(blank);
 
   const openAdd  = () => { setForm(blank); setApiErr(""); setModal("add"); };
@@ -878,7 +942,7 @@ function Customers({ customers, reload, isAdmin }) {
   const save = async () => {
     if (!form.name.trim()) return;
     setSaving(true); setApiErr("");
-    const payload = { name: form.name, gender: form.gender, phone: form.phone, email: form.email, visits: Number(form.visits), last_visit: form.last_visit, has_membership: !!form.has_membership, membership_card_no: form.membership_card_no, membership_start: form.membership_start || null, membership_end: form.membership_end || null, notes: form.notes };
+    const payload = { name: form.name, dob: form.dob || null, gender: form.gender, phone: form.phone, email: form.email, visits: Number(form.visits), last_visit: form.last_visit, has_membership: !!form.has_membership, membership_card_no: form.membership_card_no, membership_start: form.membership_start || null, membership_end: form.membership_end || null, notes: form.notes };
     let err;
     if (modal === "add") ({ error: err } = await supabase.from("customers").insert([payload]));
     else ({ error: err } = await supabase.from("customers").update(payload).eq("id", form.id));
@@ -930,13 +994,13 @@ function Customers({ customers, reload, isAdmin }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
           <thead>
             <tr style={{ background: "var(--bg)" }}>
-              {["Customer", "Contact", "Visits", "Last Visit", "Notes", ""].map(h => (
+              {["Customer", "Contact", "DOB", "Visits", "Last Visit", "Notes", ""].map(h => (
                 <th key={h} style={{ textAlign: "left", padding: "11px 14px", color: "var(--muted)", fontWeight: 600, fontSize: ".75rem", textTransform: "uppercase", letterSpacing: ".05em", borderBottom: "1px solid var(--border)" }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 && <tr><td colSpan={6} style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>No customers found.</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={7} style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>No customers found.</td></tr>}
             {filtered.map(c => (
               <tr key={c.id} style={{ borderBottom: "1px solid var(--border)" }}>
                 <td style={{ padding: "12px 14px", fontWeight: 700, color: "var(--text)" }}>
@@ -947,6 +1011,7 @@ function Customers({ customers, reload, isAdmin }) {
                   <div style={{ fontSize: ".74rem", color: "var(--muted)", fontWeight: 600 }}>{c.gender || "other"}</div>
                 </td>
                 <td style={{ padding: "12px 14px", color: "var(--muted)" }}><div>{c.phone}</div><div style={{ fontSize: ".78rem" }}>{c.email}</div></td>
+                <td style={{ padding: "12px 14px", color: "var(--muted)", whiteSpace: "nowrap" }}>{c.dob || "-"}</td>
                 <td style={{ padding: "12px 14px" }}><span style={{ background: "var(--accent)", color: "var(--bg)", borderRadius: 99, padding: "2px 10px", fontWeight: 700, fontSize: ".8rem" }}>{c.visits}</span></td>
                 <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{c.last_visit}</td>
                 <td style={{ padding: "12px 14px", color: "var(--muted)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes || "—"}</td>
@@ -977,6 +1042,7 @@ function Customers({ customers, reload, isAdmin }) {
           </div>
           <Field label="Phone"><input style={IS} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
           <Field label="Email"><input style={IS} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
+          <Field label="DOB"><input type="date" style={IS} value={form.dob} onChange={e => setForm({ ...form, dob: e.target.value })} onMouseEnter={e => e.target.showPicker?.()} /></Field>
           <Field label="Last Visit"><input type="date" style={IS} value={form.last_visit} onChange={e => setForm({ ...form, last_visit: e.target.value })} onMouseEnter={e => e.target.showPicker?.()} /></Field>
           <Field label="Membership">
             <label style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text)", fontSize: ".88rem", fontWeight: 700 }}>
@@ -1144,12 +1210,12 @@ function Services({ services, reload, isAdmin }) {
 // ─────────────────────────────────────────────────────────────
 // APP ROOT
 // ─────────────────────────────────────────────────────────────
-function Billing({ bills, reload, employees, customers, services, isAdmin }) {
+function Billing({ bills, reload, employees, customers, services, isAdmin, setTab }) {
   const [modal, setModal]         = useState(null); // "add" | "edit" | null
   const [editBill, setEditBill]   = useState(null);
   const [viewBill, setViewBill]   = useState(null);
   const [confirmId, setConfirmId] = useState(null);
-  const [dateFilter, setDateFilter] = useState(today());
+  const [dateRange, setDateRange] = useState({ start: today(), end: today() });
   const [calMonth, setCalMonth] = useState(() => {
     const d = new Date();
     return { year: d.getFullYear(), month: d.getMonth() };
@@ -1163,6 +1229,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
   const [customerErr, setCustomerErr] = useState("");
   const [deleting, setDeleting]   = useState(false);
   const [apiErr, setApiErr]       = useState("");
+  const [dashboardPopup, setDashboardPopup] = useState(false);
 
   const blankForm = {
     customer_id: "", employee_id: "", bill_date: today(), bill_time: "10:00",
@@ -1217,7 +1284,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
 
   // ── open modals ─────────────────────────────────────────────────────────────
   const openAdd = () => {
-    setForm({ ...blankForm, bill_date: dateFilter || today() });
+    setForm({ ...blankForm, bill_date: dateRange.start || today() });
     setItems([{ service_id: "" }]);
     setServiceSearch([""]);
     setServiceOpen([false]);
@@ -1417,7 +1484,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
 
   // ── filtered list ───────────────────────────────────────────────────────────
   const filtered = bills
-    .filter(b => !dateFilter || b.bill_date === dateFilter)
+    .filter(b => !dateRange.start || !dateRange.end || (b.bill_date >= dateRange.start && b.bill_date <= dateRange.end))
     .filter(b => {
       const q = search.toLowerCase();
       return [b.customer_name, b.employee_name, b.service_name, billNo(b)].some(v => String(v || "").toLowerCase().includes(q));
@@ -1430,9 +1497,15 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
     billsByDate[b.bill_date] = (billsByDate[b.bill_date] || 0) + 1;
   });
 
-  const selectedTotal = bills
-    .filter(b => b.bill_date === dateFilter)
-    .reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+  const selectedBills = bills.filter(b => b.bill_date >= dateRange.start && b.bill_date <= dateRange.end);
+  const selectedTotal = selectedBills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+  const selectedDiscount = selectedBills.reduce((sum, b) => sum + Number(b.discount_amount || b.manual_discount || 0), 0);
+  const selectedGst = selectedBills.reduce((sum, b) => sum + Number(b.gst_amount || 0), 0);
+  const selectedNet = selectedTotal - selectedGst;
+  const selectedAdvance = selectedBills.reduce((sum, b) => sum + Number(b.advance_amount || b.advance || 0), 0);
+  const selectedCash = selectedBills.filter(b => String(b.payment_mode || "").toLowerCase() === "cash").reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+  const selectedUpi = selectedBills.filter(b => String(b.payment_mode || "").toLowerCase() === "upi").reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+  const selectedCard = selectedBills.filter(b => String(b.payment_mode || "").toLowerCase() === "card").reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
   const monthStr = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, "0")}`;
   const monthTotal = bills
     .filter(b => String(b.bill_date || "").startsWith(monthStr))
@@ -1830,6 +1903,21 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
   // ── render ──────────────────────────────────────────────────────────────────
   return (
     <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
+        {[
+          { label: "Total Net", value: selectedNet, accent: [24, 163, 101] },
+          { label: "Total Gross", value: selectedTotal, accent: [37, 99, 235] },
+          { label: "Total Advance", value: selectedAdvance, accent: [234, 179, 8] },
+          { label: "Total Discount", value: selectedDiscount, accent: [236, 72, 153] },
+        ].map(card => (
+          <div key={card.label} style={{ borderRadius: 18, padding: "1rem", display: "flex", justifyContent: "space-between", alignItems: "center", background: `linear-gradient(135deg, rgba(${card.accent.join(",")},.15), rgba(255,255,255,.7))`, border: `1px solid rgba(${card.accent.join(",")}, .18)` }}>
+            <div>
+              <div style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6 }}>{card.label}</div>
+              <div style={{ fontSize: "1.35rem", fontWeight: 800, color: "var(--text)" }}>{money(card.value)}</div>
+            </div>
+          </div>
+        ))}
+      </div>
       {/* Calendar */}
       <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: "1rem", alignItems: "start", marginBottom: "1rem" }}>
         <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
@@ -1857,11 +1945,19 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
               {Array(daysInMonth(calMonth.year, calMonth.month)).fill(null).map((_, i) => {
                 const day = i + 1;
                 const dateStr = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                const isSelected = dateStr === dateFilter;
+                const isSelected = dateStr >= dateRange.start && dateStr <= dateRange.end;
                 const isToday = dateStr === today();
                 const hasBills = billsByDate[dateStr] > 0;
                 return (
-                  <button key={day} onClick={() => setDateFilter(dateStr)}
+                  <button key={day} onClick={() => {
+                    if (dateRange.start !== dateRange.end) {
+                      setDateRange({ start: dateStr, end: dateStr });
+                    } else if (dateStr >= dateRange.start) {
+                      setDateRange({ start: dateRange.start, end: dateStr });
+                    } else {
+                      setDateRange({ start: dateStr, end: dateRange.start });
+                    }
+                  }}
                     style={{
                       position: "relative", width: "100%", aspectRatio: "1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
                       borderRadius: 8, border: isToday ? "1px solid var(--accent)" : "1px solid transparent",
@@ -1879,7 +1975,9 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
             </div>
           </div>
           <div style={{ padding: "0 1rem 1rem", borderTop: "1px solid var(--border)", paddingTop: "0.875rem", marginTop: "-1px" }}>
-            <div style={{ fontSize: ".75rem", color: "var(--muted)", marginBottom: 4 }}>Selected: <strong style={{ color: "var(--text)" }}>{dateFilter}</strong></div>
+            <div style={{ fontSize: ".75rem", color: "var(--muted)", marginBottom: 4 }}>
+              Selected: <strong style={{ color: "var(--text)" }}>{dateRange.start === dateRange.end ? dateRange.start : `${dateRange.start} – ${dateRange.end}`}</strong>
+            </div>
             <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>Bills: <strong style={{ color: "var(--accent)" }}>{filtered.length}</strong></div>
             <div style={{ fontSize: ".75rem", color: "var(--muted)", marginTop: 2 }}>Day total: <strong style={{ color: "#34d399" }}>{money(selectedTotal)}</strong></div>
             <div style={{ fontSize: ".75rem", color: "var(--muted)", marginTop: 2 }}>Month total: <strong style={{ color: "#60a5fa" }}>{money(monthTotal)}</strong></div>
@@ -1890,9 +1988,12 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
       {/* Toolbar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {isAdmin && <Btn ghost onClick={() => setDashboardPopup(true)}><Icon d={I.dash} size={15} /> DASHBOARD</Btn>}
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <input placeholder="Search bill / customer..." value={search} onChange={e => setSearch(e.target.value)} style={{ ...IS, width: 220 }} />
           {isAdmin && <Btn ghost onClick={downloadMonthlyBillsPdf}><Icon d={I.print} size={15} /> Monthly Bills</Btn>}
-          <Btn onClick={openAdd}><Icon d={I.add} size={15} /> New Bill</Btn>
+          <Btn onClick={openAdd}><Icon d={I.add} size={15} /> NEW</Btn>
         </div>
       </div>
 
@@ -1901,65 +2002,84 @@ function Billing({ bills, reload, employees, customers, services, isAdmin }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
           <thead>
             <tr style={{ background: "var(--bg)" }}>
-              {["Bill No", "Customer", "Service", "Original", "Discount", "GST", "Total", "Staff", "Date", ""].map(h => (
-                <th key={h} style={{ textAlign: "left", padding: "11px 14px", color: "var(--muted)", fontWeight: 600, fontSize: ".75rem", textTransform: "uppercase", letterSpacing: ".05em", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>{h}</th>
+              {["InvoiceID", "Date", "Customer", "Desc", "Gross", "Discount", "Referral", "View"].map(h => (
+                <th key={h} style={{ textAlign: h === "Gross" || h === "Discount" ? "right" : "left", padding: "11px 14px", color: "var(--muted)", fontWeight: 600, fontSize: ".75rem", textTransform: "uppercase", letterSpacing: ".05em", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 && (
-              <tr><td colSpan={10} style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>No bills found.</td></tr>
+              <tr><td colSpan={8} style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>No bills found.</td></tr>
             )}
             {filtered.map(b => {
               const rowCustomer = customers.find(c => c.id === b.customer_id);
               return (
                 <tr key={b.id} style={{ borderBottom: "1px solid var(--border)" }}>
                   <td style={{ padding: "12px 14px", fontWeight: 800, color: "var(--text)" }}>#{billNo(b)}</td>
+                  <td style={{ padding: "12px 14px", color: "var(--muted)", whiteSpace: "nowrap" }}>
+                    {b.bill_date} <span style={{ color: "var(--accent)", fontWeight: 600 }}>{String(b.bill_time || "").slice(0, 5)}</span>
+                  </td>
                   <td style={{ padding: "12px 14px", color: "var(--text)" }}>
                     {b.customer_name || rowCustomer?.name || "-"}
                     {rowCustomer?.has_membership && <span style={{ marginLeft: 6 }}>👑</span>}
                   </td>
                   <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{b.service_name || getName(services, b.service_id)}</td>
-                  <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{money(b.service_price || 0)}</td>
-                  <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{money(Number(b.discount_amount || 0))}</td>
-                  <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{money(b.gst_amount)}</td>
-                  <td style={{ padding: "12px 14px", fontWeight: 800, color: "var(--text)" }}>{money(b.total_amount)}</td>
-                  <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{b.employee_name || getName(employees, b.employee_id)}</td>
-                  <td style={{ padding: "12px 14px", color: "var(--muted)", whiteSpace: "nowrap" }}>
-                    {b.bill_date} <span style={{ color: "var(--accent)", fontWeight: 600 }}>{String(b.bill_time || "").slice(0, 5)}</span>
-                  </td>
+                  <td style={{ padding: "12px 14px", color: "var(--muted)", textAlign: "right" }}>{money(b.total_amount || 0)}</td>
+                  <td style={{ padding: "12px 14px", color: "var(--muted)", textAlign: "right" }}>{money(Number(b.discount_amount || 0))}</td>
+                  <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{b.referral || "-"}</td>
                   <td style={{ padding: "12px 14px" }}>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    {/* View */}
                     <button title="View bill" onClick={() => setViewBill(b)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--muted)", display: "flex" }}>
                       <Icon d={I.eye} size={13} />
                     </button>
-                    {/* Print */}
-                    <button title="Print bill" onClick={() => printBill(b)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--accent)", display: "flex" }}>
-                      <Icon d={I.print} size={13} />
-                    </button>
-                    {/* Edit — admin only */}
-                    {isAdmin && (
-                      <button title="Edit bill" onClick={() => openEdit(b)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--accent)", display: "flex" }}>
-                        <Icon d={I.edit} size={13} />
-                      </button>
-                    )}
-                    {/* Delete — admin only */}
-                    {isAdmin && (
-                      <button title="Delete bill" onClick={() => setConfirmId(b.id)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "#e53e3e", display: "flex" }}>
-                        <Icon d={I.del} size={13} />
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            )})}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
         </div>
       </div>
 
+      {dashboardPopup && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(8,6,18,.45)", zIndex: 1100, display: "flex", justifyContent: "flex-end" }}>
+          <div style={{ width: 420, maxWidth: "100%", height: "100%", background: "var(--card)", borderLeft: "1px solid var(--border)", boxShadow: "-24px 0 48px rgba(0,0,0,.35)", overflowY: "auto", padding: "1.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <div>
+                <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--text)" }}>Dashboard</div>
+                <div style={{ color: "var(--muted)", fontSize: ".88rem", marginTop: 4 }}>Quick billing insights</div>
+              </div>
+              <button onClick={() => setDashboardPopup(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex" }}>
+                <Icon d={I.close} size={18} />
+              </button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+              {[
+                { label: "Bills", value: filtered.length, color: "#60a5fa" },
+                { label: "Day Total", value: selectedTotal, color: "#22c55e", money: true },
+                { label: "Discount", value: selectedDiscount, color: "#ec4899", money: true },
+                { label: "Advance", value: selectedAdvance, color: "#f59e0b", money: true },
+                { label: "Cash", value: selectedCash, color: "#22c55e", money: true },
+                { label: "UPI", value: selectedUpi, color: "#2563eb", money: true },
+                { label: "Card", value: selectedCard, color: "#8b5cf6", money: true },
+              ].map(item => (
+                <div key={item.label} style={{ background: "rgba(255,255,255,.04)", border: "1px solid var(--border)", borderRadius: 16, padding: "1rem" }}>
+                  <div style={{ color: "var(--muted)", fontSize: ".72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: ".5rem" }}>{item.label}</div>
+                  <div style={{ fontSize: "1.25rem", fontWeight: 800, color: item.color }}>{item.money ? money(item.value) : item.value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ padding: "1rem", background: "rgba(255,255,255,.04)", border: "1px solid var(--border)", borderRadius: 16 }}>
+              <div style={{ marginBottom: ".75rem", fontSize: ".92rem", fontWeight: 700, color: "var(--text)" }}>Month overview</div>
+              <div style={{ display: "grid", gap: ".75rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--muted)" }}><span>Total bills</span><strong style={{ color: "var(--text)" }}>{monthBills.length}</strong></div>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--muted)" }}><span>Month total</span><strong style={{ color: "var(--text)" }}>{money(monthTotal)}</strong></div>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--muted)" }}><span>Customer visits</span><strong style={{ color: "var(--text)" }}>{monthCustomerCount}</strong></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Add modal */}
       {modal === "add" && (
         <Modal title="New Bill" onClose={() => setModal(null)} wide>
@@ -2220,7 +2340,7 @@ export default function App() {
             {tab === "dashboard" && isAdmin && (
               <OwnerDashboard employees={employees} customers={customers} services={services} bills={bills} />
             )}
-            {tab === "billing"      && <Billing      bills={bills} reload={loadData} employees={employees} customers={customers} services={services} isAdmin={isAdmin} />}
+            {tab === "billing"      && <Billing      bills={bills} reload={loadData} employees={employees} customers={customers} services={services} isAdmin={isAdmin} setTab={setTab} />}
             {tab === "employees"    && <Employees    employees={employees}    reload={loadData} isAdmin={isAdmin} />}
             {tab === "customers"    && <Customers    customers={customers}    reload={loadData} isAdmin={isAdmin} />}
             {tab === "services"     && <Services     services={services}      reload={loadData} isAdmin={isAdmin} />}
