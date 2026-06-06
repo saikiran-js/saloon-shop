@@ -64,7 +64,7 @@ const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root { --bg:#0d0b14; --card:#16131f; --border:#2a2540; --text:#f0ecff; --muted:#7c6fa0; --accent:#c084fc; }
-  [data-theme="light"] { --bg:#f7f8fb; --card:#ffffff; --border:#dbe1ea; --text:#172033; --muted:#687386; --accent:#2563eb; }
+  [data-theme="light"] { --bg:#f7f8fb; --card:#ffffff; --border:#dbe1ea; --text:#172033; --muted:#687386; --accent:#7c3aed; }
   body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; }
   input, select, textarea { font-family: 'DM Sans', sans-serif; }
   ::-webkit-scrollbar { width: 6px; }
