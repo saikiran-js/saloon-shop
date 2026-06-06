@@ -1879,7 +1879,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
       </div>
 
       <Field label="Price Type">
-        <select style={IS} value={form.pricing_type} onChange={e => setForm({ ...form, pricing_type: e.target.value })}>
+        <select style={IS} value={form.pricing_type} disabled>
           <option value="general">General / Non membership</option>
           <option value="membership">Membership</option>
         </select>
