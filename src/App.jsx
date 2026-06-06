@@ -934,7 +934,7 @@ function Customers({ customers, bills, reload, isAdmin }) {
   const [deleting, setDeleting]   = useState(false);
   const [apiErr, setApiErr]       = useState("");
 
-  const blank = { name: "", dob: "", gender: "other", phone: "", email: "", visits: 0, last_visit: today(), has_membership: false, membership_card_no: "", membership_start: "", membership_end: "", notes: "" };
+  const blank = { name: "", dob: "", gender: "other", phone: "", email: "", last_visit: today(), has_membership: false, membership_card_no: "", membership_start: "", membership_end: "", notes: "" };
   const [form, setForm] = useState(blank);
 
   const openAdd  = () => { setForm(blank); setApiErr(""); setModal("add"); };
@@ -943,7 +943,7 @@ function Customers({ customers, bills, reload, isAdmin }) {
   const save = async () => {
     if (!form.name.trim()) return;
     setSaving(true); setApiErr("");
-    const payload = { name: form.name, dob: form.dob || null, gender: form.gender, phone: form.phone, email: form.email, visits: Number(form.visits), last_visit: form.last_visit, has_membership: !!form.has_membership, membership_card_no: form.membership_card_no, membership_start: form.membership_start || null, membership_end: form.membership_end || null, notes: form.notes };
+    const payload = { name: form.name, dob: form.dob || null, gender: form.gender, phone: form.phone, email: form.email, last_visit: form.last_visit, has_membership: !!form.has_membership, membership_card_no: form.membership_card_no, membership_start: form.membership_start || null, membership_end: form.membership_end || null, notes: form.notes };
     let err;
     if (modal === "add") ({ error: err } = await supabase.from("customers").insert([payload]));
     else ({ error: err } = await supabase.from("customers").update(payload).eq("id", form.id));
@@ -966,13 +966,18 @@ function Customers({ customers, bills, reload, isAdmin }) {
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     (c.phone || "").includes(search)
   );
+  const visitsByCustomer = bills.reduce((acc, bill) => {
+    if (!bill.customer_id) return acc;
+    acc[bill.customer_id] = (acc[bill.customer_id] || 0) + 1;
+    return acc;
+  }, {});
   const customerBills = viewCustomer ? bills.filter(b => b.customer_id === viewCustomer.id).sort((a, b) => `${b.bill_date}${b.bill_time}`.localeCompare(`${a.bill_date}${a.bill_time}`)) : [];
   const customerTotal = customerBills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
   const genderOf = (value) => String(value || "other").toLowerCase();
   const maleCount = customers.filter(c => genderOf(c.gender) === "male").length;
   const femaleCount = customers.filter(c => genderOf(c.gender) === "female").length;
-  const repeatCount = customers.filter(c => Number(c.visits || 0) > 1).length;
-  const nonRepeatCount = customers.length - repeatCount;
+  const repeatCount = customers.filter(c => (visitsByCustomer[c.id] || 0) > 1).length;
+  const nonRepeatCount = customers.filter(c => (visitsByCustomer[c.id] || 0) <= 1).length;
 
   return (
     <div>
@@ -997,7 +1002,7 @@ function Customers({ customers, bills, reload, isAdmin }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
           <thead>
             <tr style={{ background: "var(--bg)" }}>
-              {["Customer", "Contact", "DOB", "Visits", "Last Visit", "Notes", ""].map(h => (
+              {["Customer", "Contact", "DOB", "Last Visit", "Notes", ""].map(h => (
                 <th key={h} style={{ textAlign: "left", padding: "11px 14px", color: "var(--muted)", fontWeight: 600, fontSize: ".75rem", textTransform: "uppercase", letterSpacing: ".05em", borderBottom: "1px solid var(--border)" }}>{h}</th>
               ))}
             </tr>
@@ -1015,7 +1020,6 @@ function Customers({ customers, bills, reload, isAdmin }) {
                 </td>
                 <td style={{ padding: "12px 14px", color: "var(--muted)" }}><div>{c.phone}</div><div style={{ fontSize: ".78rem" }}>{c.email}</div></td>
                 <td style={{ padding: "12px 14px", color: "var(--muted)", whiteSpace: "nowrap" }}>{c.dob || "-"}</td>
-                <td style={{ padding: "12px 14px" }}><span style={{ background: "var(--accent)", color: "var(--bg)", borderRadius: 99, padding: "2px 10px", fontWeight: 700, fontSize: ".8rem" }}>{c.visits}</span></td>
                 <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{c.last_visit}</td>
                 <td style={{ padding: "12px 14px", color: "var(--muted)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes || "—"}</td>
                 <td style={{ padding: "12px 14px" }}>
@@ -1078,7 +1082,6 @@ function Customers({ customers, bills, reload, isAdmin }) {
                 <option value="other">Other</option>
               </select>
             </Field>
-            <Field label="Visits"><input type="number" style={IS} value={form.visits} onChange={e => setForm({ ...form, visits: e.target.value })} /></Field>
           </div>
           <Field label="Phone"><input style={IS} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
           <Field label="Email"><input style={IS} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
@@ -1276,7 +1279,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
     pricing_type: "general", manual_discount: 0, payment_mode: "Cash", notes: "",
   };
   const blankCustomer = {
-    name: "", gender: "other", phone: "", email: "", visits: 0, last_visit: today(),
+    name: "", gender: "other", phone: "", email: "", last_visit: today(),
     has_membership: false, membership_card_no: "", membership_start: "", membership_end: "", notes: "",
   };
   const [form, setForm] = useState(blankForm);
@@ -1324,8 +1327,8 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
 
   const syncCustomerTotals = async (customerId) => {
     if (!customerId) return;
-    const { data: billRows, error: billErr, count } = await supabase.from("bills")
-      .select("bill_date", { count: "exact" })
+    const { data: billRows, error: billErr } = await supabase.from("bills")
+      .select("bill_date")
       .eq("customer_id", customerId)
       .order("bill_date", { ascending: false })
       .limit(1);
@@ -1333,11 +1336,10 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
       console.error("Failed to sync customer stats:", billErr.message);
       return;
     }
-    const visits = Number(count || billRows?.length || 0);
     const last_visit = billRows?.[0]?.bill_date || null;
-    const { error: err } = await supabase.from("customers").update({ visits, last_visit }).eq("id", customerId);
+    const { error: err } = await supabase.from("customers").update({ last_visit }).eq("id", customerId);
     if (err) {
-      console.error("Failed to update customer visits:", err.message);
+      console.error("Failed to update customer last visit:", err.message);
     }
   };
 
@@ -1402,7 +1404,6 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
       gender: customerForm.gender,
       phone: customerForm.phone,
       email: customerForm.email,
-      visits: Number(customerForm.visits || 0),
       last_visit: customerForm.last_visit || today(),
       has_membership: !!customerForm.has_membership,
       membership_card_no: customerForm.membership_card_no,
