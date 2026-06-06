@@ -1282,6 +1282,25 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
   const canSaveBill = !!form.customer_id && !!form.employee_id && items.some(item => item.service_id);
   const canSaveCustomer = customerForm.name.trim().length > 0;
 
+  const syncCustomerTotals = async (customerId) => {
+    if (!customerId) return;
+    const { data: billRows, error: billErr, count } = await supabase.from("bills")
+      .select("bill_date", { count: "exact" })
+      .eq("customer_id", customerId)
+      .order("bill_date", { ascending: false })
+      .limit(1);
+    if (billErr) {
+      console.error("Failed to sync customer stats:", billErr.message);
+      return;
+    }
+    const visits = Number(count || billRows?.length || 0);
+    const last_visit = billRows?.[0]?.bill_date || null;
+    const { error: err } = await supabase.from("customers").update({ visits, last_visit }).eq("id", customerId);
+    if (err) {
+      console.error("Failed to update customer visits:", err.message);
+    }
+  };
+
   // ── open modals ─────────────────────────────────────────────────────────────
   const openAdd = () => {
     setForm({ ...blankForm, bill_date: dateRange.start || today() });
@@ -1425,6 +1444,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
     const { error: err } = await supabase.from("bills").insert([payload]);
     setSaving(false);
     if (err) { setApiErr(err.message); return; }
+    await syncCustomerTotals(payload.customer_id);
     await reload();
     setModal(null);
   };
@@ -1436,6 +1456,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
     const { data, error: err } = await supabase.from("bills").insert([payload]).select().single();
     setSaving(false);
     if (err) { setApiErr(err.message); return; }
+    await syncCustomerTotals(data?.customer_id || payload.customer_id);
     await reload();
     setModal(null);
     if (data) printBill(data);
@@ -1449,6 +1470,10 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
     const { error: err } = await supabase.from("bills").update(payload).eq("id", editBill.id);
     setSaving(false);
     if (err) { setApiErr(err.message); return; }
+    if (editBill.customer_id && editBill.customer_id !== payload.customer_id) {
+      await syncCustomerTotals(editBill.customer_id);
+    }
+    await syncCustomerTotals(payload.customer_id);
     await reload();
     setModal(null);
     setEditBill(null);
@@ -1461,6 +1486,10 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
     const { data, error: err } = await supabase.from("bills").update(payload).eq("id", editBill.id).select().single();
     setSaving(false);
     if (err) { setApiErr(err.message); return; }
+    if (editBill.customer_id && editBill.customer_id !== payload.customer_id) {
+      await syncCustomerTotals(editBill.customer_id);
+    }
+    await syncCustomerTotals(payload.customer_id);
     await reload();
     setModal(null);
     setEditBill(null);
@@ -1470,9 +1499,12 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
   // ── delete ──────────────────────────────────────────────────────────────────
   const del = async (id) => {
     setDeleting(true);
+    const bill = bills.find(b => b.id === id);
+    const customerId = bill?.customer_id;
     const { error: err } = await supabase.from("bills").delete().eq("id", id);
     setDeleting(false);
     if (err) { alert(err.message); return; }
+    await syncCustomerTotals(customerId);
     await reload();
     setConfirmId(null);
   };
