@@ -925,8 +925,9 @@ function Employees({ employees, reload, isAdmin }) {
 // ─────────────────────────────────────────────────────────────
 // CUSTOMERS
 // ─────────────────────────────────────────────────────────────
-function Customers({ customers, reload, isAdmin }) {
+function Customers({ customers, bills, reload, isAdmin }) {
   const [modal, setModal]         = useState(null);
+  const [viewCustomer, setViewCustomer] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
   const [search, setSearch]       = useState("");
   const [saving, setSaving]       = useState(false);
@@ -965,6 +966,8 @@ function Customers({ customers, reload, isAdmin }) {
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     (c.phone || "").includes(search)
   );
+  const customerBills = viewCustomer ? bills.filter(b => b.customer_id === viewCustomer.id).sort((a, b) => `${b.bill_date}${b.bill_time}`.localeCompare(`${a.bill_date}${a.bill_time}`)) : [];
+  const customerTotal = customerBills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
   const genderOf = (value) => String(value || "other").toLowerCase();
   const maleCount = customers.filter(c => genderOf(c.gender) === "male").length;
   const femaleCount = customers.filter(c => genderOf(c.gender) === "female").length;
@@ -1017,6 +1020,7 @@ function Customers({ customers, reload, isAdmin }) {
                 <td style={{ padding: "12px 14px", color: "var(--muted)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes || "—"}</td>
                 <td style={{ padding: "12px 14px" }}>
                   <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => setViewCustomer(c)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--muted)", display: "flex" }}><Icon d={I.eye} size={13} /></button>
                     <button onClick={() => openEdit(c)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--muted)", display: "flex" }}><Icon d={I.edit} size={13} /></button>
                     <button onClick={() => isAdmin && setConfirmId(c.id)} disabled={!isAdmin} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: isAdmin ? "pointer" : "not-allowed", color: "#e53e3e", opacity: isAdmin ? 1 : .4, display: "flex" }}><Icon d={I.del} size={13} /></button>
                   </div>
@@ -1026,6 +1030,42 @@ function Customers({ customers, reload, isAdmin }) {
           </tbody>
         </table>
       </div>
+
+      {viewCustomer && (
+        <Modal title={`Visits for ${viewCustomer.name}`} onClose={() => setViewCustomer(null)} wide>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+            <div style={{ color: "var(--muted)", fontSize: ".95rem" }}>Total visits: <strong style={{ color: "var(--text)" }}>{customerBills.length}</strong></div>
+            <div style={{ color: "var(--muted)", fontSize: ".95rem" }}>Total billed: <strong style={{ color: "var(--text)" }}>{fmt(customerTotal)}</strong></div>
+          </div>
+          {customerBills.length === 0 ? (
+            <div style={{ color: "var(--muted)", fontSize: ".9rem" }}>No visits recorded for this customer yet.</div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
+                <thead>
+                  <tr style={{ background: "var(--bg)" }}>
+                    {['Date', 'Time', 'Services', 'Amount', 'Payment', 'Notes'].map(h => (
+                      <th key={h} style={{ textAlign: 'left', padding: '11px 14px', color: 'var(--muted)', fontWeight: 600, fontSize: '.75rem', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {customerBills.map(bill => (
+                    <tr key={bill.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '12px 14px', color: 'var(--text)', fontWeight: 700 }}>{bill.bill_date || '-'}</td>
+                      <td style={{ padding: '12px 14px', color: 'var(--muted)' }}>{bill.bill_time || '-'}</td>
+                      <td style={{ padding: '12px 14px', color: 'var(--muted)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{bill.service_name || bill.line_items?.map(item => item.service_name).join(', ') || '-'}</td>
+                      <td style={{ padding: '12px 14px', color: 'var(--text)', fontWeight: 700 }}>{fmt(bill.total_amount || 0)}</td>
+                      <td style={{ padding: '12px 14px', color: 'var(--muted)' }}>{bill.payment_mode || '-'}</td>
+                      <td style={{ padding: '12px 14px', color: 'var(--muted)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bill.notes || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Modal>
+      )}
 
       {(modal === "add" || modal?.edit) && (
         <Modal title={modal === "add" ? "Add Customer" : "Edit Customer"} onClose={() => setModal(null)}>
@@ -2374,7 +2414,7 @@ export default function App() {
             )}
             {tab === "billing"      && <Billing      bills={bills} reload={loadData} employees={employees} customers={customers} services={services} isAdmin={isAdmin} setTab={setTab} />}
             {tab === "employees"    && <Employees    employees={employees}    reload={loadData} isAdmin={isAdmin} />}
-            {tab === "customers"    && <Customers    customers={customers}    reload={loadData} isAdmin={isAdmin} />}
+            {tab === "customers"    && <Customers    customers={customers}    bills={bills} reload={loadData} isAdmin={isAdmin} />}
             {tab === "services"     && <Services     services={services}      reload={loadData} isAdmin={isAdmin} />}
           </main>
         </div>
