@@ -1274,6 +1274,17 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
   const [apiErr, setApiErr]       = useState("");
   const [dashboardPopup, setDashboardPopup] = useState(false);
 
+  // ── Add this state inside Billing component (near other useState declarations) ──
+const [membershipModal, setMembershipModal] = useState(false);
+const [membershipForm, setMembershipForm] = useState({ membership_card_no: "", membership_start: "", membership_end: "" });
+const [membershipSaving, setMembershipSaving] = useState(false);
+const [membershipCustomerId, setMembershipCustomerId] = useState(null);
+const [membershipErr, setMembershipErr] = useState("");
+
+
+// ── NOW safe to reference items ──────────────────────────────────────
+
+
   const blankForm = {
     customer_id: "", employee_id: "", bill_date: today(), bill_time: "10:00",
     pricing_type: "general", manual_discount: 0, payment_mode: "Cash", notes: "",
@@ -1285,6 +1296,14 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
   const [form, setForm] = useState(blankForm);
   const [items, setItems] = useState([{ service_id: "" }]);
   const [customerForm, setCustomerForm] = useState(blankCustomer);
+  
+  const hasMembershipService = items.some(item => {
+  const svc = services.find(s => s.id === item.service_id);
+  return svc && (
+    svc.name.toLowerCase().includes("membership") ||
+    svc.category?.toLowerCase().includes("membership")
+  );
+});
 
   // ── helpers ────────────────────────────────────────────────────────────────
   const money     = (n) => `Rs. ${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1389,7 +1408,8 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
   const updateItem = (index, service_id) => setItems(items.map((item, i) => i === index ? { ...item, service_id } : item));
   const updateCustomer = (customer_id) => {
     const customer = customers.find(c => c.id === customer_id);
-    setForm({ ...form, customer_id, pricing_type: customer?.has_membership ? "membership" : "general" });
+    const isMember = customer?.has_membership || !!customer?.membership_card_no;
+    setForm({ ...form, customer_id, pricing_type: isMember ? "membership" : "general" });
   };
 
   const saveCustomerFromBilling = async () => {
@@ -1477,31 +1497,75 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
     };
   };
 
-  // ── save (insert) ───────────────────────────────────────────────────────────
-  const save = async () => {
-    const payload = buildPayload();
-    if (!payload) return;
-    setSaving(true); setApiErr("");
-    const { error: err } = await supabase.from("bills").insert([payload]);
-    setSaving(false);
-    if (err) { setApiErr(err.message); return; }
-    await syncCustomerTotals(payload.customer_id);
-    await reload();
-    setModal(null);
-  };
+  // ── Add this function inside Billing (near other helpers) ──
+const saveMembership = async () => {
+  if (!membershipCustomerId) return;
+  setMembershipSaving(true); setMembershipErr("");
+  const { error: err } = await supabase.from("customers").update({
+    has_membership: true,
+    membership_card_no: membershipForm.membership_card_no,
+    membership_start: membershipForm.membership_start || null,
+    membership_end: membershipForm.membership_end || null,
+  }).eq("id", membershipCustomerId);
+  setMembershipSaving(false);
+  if (err) { setMembershipErr(err.message); return; }
+  await reload();
+  setMembershipModal(false);
+  setMembershipCustomerId(null);
+};
 
-  const saveAndPrint = async () => {
-    const payload = buildPayload();
-    if (!payload) return;
-    setSaving(true); setApiErr("");
-    const { data, error: err } = await supabase.from("bills").insert([payload]).select().single();
-    setSaving(false);
-    if (err) { setApiErr(err.message); return; }
-    await syncCustomerTotals(data?.customer_id || payload.customer_id);
-    await reload();
-    setModal(null);
-    if (data) printBill(data);
-  };
+  // ── save (insert) ───────────────────────────────────────────────────────────
+  // ── Replace your existing save function ──
+const save = async () => {
+  const payload = buildPayload();
+  if (!payload) return;
+  setSaving(true); setApiErr("");
+  const { data, error: err } = await supabase.from("bills").insert([payload]).select().single();
+  setSaving(false);
+  if (err) { setApiErr(err.message); return; }
+  await syncCustomerTotals(payload.customer_id);
+  await reload();
+  setModal(null);
+
+  // If a membership service was purchased, open membership modal
+  if (hasMembershipService && payload.customer_id) {
+    const customer = customers.find(c => c.id === payload.customer_id);
+    setMembershipCustomerId(payload.customer_id);
+    setMembershipForm({
+      membership_card_no: customer?.membership_card_no || "",
+      membership_start: customer?.membership_start || today(),
+      membership_end: customer?.membership_end || "",
+    });
+    setMembershipErr("");
+    setMembershipModal(true);
+  }
+};
+
+  // ── Replace your existing saveAndPrint function ──
+const saveAndPrint = async () => {
+  const payload = buildPayload();
+  if (!payload) return;
+  setSaving(true); setApiErr("");
+  const { data, error: err } = await supabase.from("bills").insert([payload]).select().single();
+  setSaving(false);
+  if (err) { setApiErr(err.message); return; }
+  await syncCustomerTotals(data?.customer_id || payload.customer_id);
+  await reload();
+  setModal(null);
+  if (data) printBill(data);
+
+  if (hasMembershipService && payload.customer_id) {
+    const customer = customers.find(c => c.id === payload.customer_id);
+    setMembershipCustomerId(payload.customer_id);
+    setMembershipForm({
+      membership_card_no: customer?.membership_card_no || "",
+      membership_start: customer?.membership_start || today(),
+      membership_end: customer?.membership_end || "",
+    });
+    setMembershipErr("");
+    setMembershipModal(true);
+  }
+};
 
   // ── update (edit) ───────────────────────────────────────────────────────────
   const update = async () => {
@@ -2094,7 +2158,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
                   </td>
                   <td style={{ padding: "12px 14px", color: "var(--text)" }}>
                     {b.customer_name || rowCustomer?.name || "-"}
-                    {rowCustomer?.has_membership && <span style={{ marginLeft: 6 }}>👑</span>}
+                    {(rowCustomer?.has_membership || rowCustomer?.membership_card_no) && <span style={{ marginLeft: 6 }}>👑</span>}
                   </td>
                   <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{b.service_name || getName(services, b.service_id)}</td>
                   <td style={{ padding: "12px 14px", color: "var(--muted)", textAlign: "right" }}>{money(b.total_amount || 0)}</td>
@@ -2240,12 +2304,64 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
           </div>
         </Modal>
       )}
+      
 
       {/* Print-only invoice */}
       {viewBill && <div className="print-only"><Invoice bill={viewBill} printMode /></div>}
 
       {/* Delete confirm */}
       {confirmId && <Confirm msg="Delete this bill?" loading={deleting} onOk={() => del(confirmId)} onCancel={() => setConfirmId(null)} />}
+
+     
+{membershipModal && (
+  <Modal title="🎉 Membership Purchased!" onClose={() => setMembershipModal(false)}>
+    <div style={{
+      background: "rgba(192,132,252,.08)", border: "1px solid rgba(192,132,252,.25)",
+      borderRadius: 10, padding: "12px 14px", marginBottom: "1.25rem",
+      fontSize: ".83rem", color: "var(--accent)", display: "flex", alignItems: "center", gap: 8
+    }}>
+      <Icon d={I.gift} size={15} />
+      A membership service was billed. Update this customer's membership details below.
+    </div>
+
+    <Field label="Membership Card No.">
+      <input
+        style={IS}
+        value={membershipForm.membership_card_no}
+        onChange={e => setMembershipForm({ ...membershipForm, membership_card_no: e.target.value })}
+        placeholder="e.g. MEM-00123"
+      />
+    </Field>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <Field label="Start Date">
+        <input
+          type="date" style={IS}
+          value={membershipForm.membership_start}
+          onChange={e => setMembershipForm({ ...membershipForm, membership_start: e.target.value })}
+          onMouseEnter={e => e.target.showPicker?.()}
+        />
+      </Field>
+      <Field label="End Date">
+        <input
+          type="date" style={IS}
+          value={membershipForm.membership_end}
+          onChange={e => setMembershipForm({ ...membershipForm, membership_end: e.target.value })}
+          onMouseEnter={e => e.target.showPicker?.()}
+        />
+      </Field>
+    </div>
+
+    {membershipErr && <ErrBox msg={membershipErr} />}
+
+    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+      <Btn ghost onClick={() => setMembershipModal(false)}>Skip for Now</Btn>
+      <Btn onClick={saveMembership} disabled={membershipSaving}>
+        <Icon d={I.gift} size={14} />
+        {membershipSaving ? "Saving…" : "Activate Membership"}
+      </Btn>
+    </div>
+  </Modal>
+    )}  
     </div>
   );
 }
