@@ -1904,7 +1904,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
                   </button>
                   {serviceOpen[index] && (
                     <div style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 6px)", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, zIndex: 80 }}>
-                      <input placeholder="Search services..." style={{ ...IS, marginBottom: 8 }} value={serviceSearch[index] || ""} onChange={e => setServiceSearch(serviceSearch.map((v, i) => i === index ? e.target.value : v))} />
+                      <input key={`service-search-${index}`} placeholder="Search services..." style={{ ...IS, marginBottom: 8 }} value={serviceSearch[index] || ""} onChange={e => setServiceSearch(serviceSearch.map((v, i) => i === index ? e.target.value : v))} />
                       <div style={{ maxHeight: 220, overflow: "auto" }}>
                         {choices.length === 0 && <div style={{ color: "var(--muted)", padding: 8 }}>No services found.</div>}
                         {choices.map(s => (
