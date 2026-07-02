@@ -1922,7 +1922,7 @@ const saveAndPrint = async () => {
   };
 
   // ── shared form body (used by both add & edit modals) ───────────────────────
-  const BillForm = () => (
+  const renderBillForm = () => (
     <>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Customer">
@@ -1968,7 +1968,7 @@ const saveAndPrint = async () => {
                   </button>
                   {serviceOpen[index] && (
                     <div style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 6px)", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, padding: 8, zIndex: 80 }}>
-                      <input key={`service-search-${index}`} placeholder="Search services..." style={{ ...IS, marginBottom: 8 }} value={serviceSearch[index] || ""} onChange={e => setServiceSearch(serviceSearch.map((v, i) => i === index ? e.target.value : v))} />
+                      <input placeholder="Search services..." style={{ ...IS, marginBottom: 8 }} value={serviceSearch[index] || ""} onChange={e => setServiceSearch(prev => prev.map((v, i) => i === index ? e.target.value : v))} />
                       <div style={{ maxHeight: 220, overflow: "auto" }}>
                         {choices.length === 0 && <div style={{ color: "var(--muted)", padding: 8 }}>No services found.</div>}
                         {choices.map(s => (
@@ -2220,7 +2220,7 @@ const saveAndPrint = async () => {
       {/* Add modal */}
       {modal === "add" && (
         <Modal title="New Bill" onClose={() => setModal(null)} wide>
-          <BillForm />
+          {renderBillForm()}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Btn ghost onClick={() => setModal(null)}>Cancel</Btn>
             <Btn onClick={save} disabled={saving || !canSaveBill}>{saving ? "Saving..." : "Save Bill"}</Btn>
@@ -2232,7 +2232,7 @@ const saveAndPrint = async () => {
       {/* Edit modal */}
       {modal === "edit" && (
         <Modal title={`Edit Bill #${billNo(editBill)}`} onClose={() => { setModal(null); setEditBill(null); }} wide>
-          <BillForm />
+          {renderBillForm()}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Btn ghost onClick={() => { setModal(null); setEditBill(null); }}>Cancel</Btn>
             <Btn onClick={update} disabled={saving || !canSaveBill}>{saving ? "Saving..." : "Update Bill"}</Btn>
