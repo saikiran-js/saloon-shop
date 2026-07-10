@@ -380,14 +380,30 @@ function OwnerDashboard({ employees, customers, services, bills }) {
   const birthdayCustomers = customers.filter(c => c.dob && selectedMonthDays.has(c.dob.slice(5)));
   const birthdayCount = birthdayCustomers.length;
 
-  // Staff performance for selected date range (based on bills)
+  const getBillLineItems = (bill) => {
+    if (Array.isArray(bill.line_items) && bill.line_items.length) return bill.line_items;
+    return [{
+      qty:          bill.qty ?? 1,
+      rate:         bill.subtotal ?? bill.service_price ?? bill.total_amount ?? 0,
+      amount:       bill.subtotal ?? bill.service_price ?? bill.total_amount ?? 0,
+      discount:     bill.discount_amount ?? bill.manual_discount ?? 0,
+      staff_ids:    bill.staff_ids || (bill.employee_id ? [bill.employee_id] : []),
+      service_id:   bill.service_id,
+      employee_id:  bill.employee_id,
+      staff_names:  bill.staff_names || (bill.employee_name ? [bill.employee_name] : []),
+      service_name: bill.service_name,
+      employee_name: bill.employee_name,
+      general_price: bill.service_price ?? bill.subtotal ?? bill.total_amount ?? 0,
+    }];
+  };
+
   const dayBills = bills.filter(b => b.bill_date >= selectedStart && b.bill_date <= selectedEnd);
 
   const staffPerformance = employees
     .filter(e => e.status === "active")
     .map(emp => {
-      const empBills = dayBills.filter(b => b.employee_id === emp.id);
-      const billRevenue = empBills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+      const empItems = dayBills.flatMap(b => getBillLineItems(b).filter(item => item.employee_id === emp.id));
+      const billRevenue = empItems.reduce((sum, item) => sum + Number(item.amount || item.rate || 0), 0);
       const totalRevenue = billRevenue;
       const salary = Number(emp.salary || 0);
       const target = Number(emp.target_amount || 0);
@@ -395,8 +411,8 @@ function OwnerDashboard({ employees, customers, services, bills }) {
       const bonus  = totalRevenue >= target ? 2500 : 0;
       return {
         ...emp,
-        appts:     empBills.length,
-        completed: empBills.length,
+        appts:     empItems.length,
+        completed: empItems.length,
         revenue: totalRevenue,
         appointmentRevenue: 0,
         billRevenue,
@@ -425,34 +441,25 @@ function OwnerDashboard({ employees, customers, services, bills }) {
   const rankColors = ["#f59e0b", "#94a3b8", "#cd7c54", "#7c6fa0", "#7c6fa0"];
   const rankEmojis = ["🥇", "🥈", "🥉"];
   const monthStaffPerformance = employees
-  .filter(e => e.status === "active")
+    .filter(e => e.status === "active")
     .map(emp => {
-    const empAppts = monthBills.filter(b => b.employee_id === emp.id);
-
-    const revenue = 0;
-    const billRevenue = monthBills
-      .filter(b => b.employee_id === emp.id)
-      .reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
-    const totalRevenue = billRevenue;
-
-    const salary = Number(emp.salary || 0);
-    const target = Number(emp.target_amount || 0);
-
-    return {
-      ...emp,
-      revenue: totalRevenue,
-      appointmentRevenue: 0,
-      billRevenue,
-      target,
-      pct:
-        target > 0
-          ? Math.min((totalRevenue / target) * 100, 150)
-          : 0,
-      completed: empAppts.length,
-      achieved: totalRevenue >= target
-    };
-  })
-  .sort((a, b) => b.revenue - a.revenue);
+      const empItems = monthBills.flatMap(b => getBillLineItems(b).filter(item => item.employee_id === emp.id));
+      const billRevenue = empItems.reduce((sum, item) => sum + Number(item.amount || item.rate || 0), 0);
+      const totalRevenue = billRevenue;
+      const salary = Number(emp.salary || 0);
+      const target = Number(emp.target_amount || 0);
+      return {
+        ...emp,
+        revenue: totalRevenue,
+        appointmentRevenue: 0,
+        billRevenue,
+        target,
+        pct: target > 0 ? Math.min((totalRevenue / target) * 100, 150) : 0,
+        completed: empItems.length,
+        achieved: totalRevenue >= target,
+      };
+    })
+    .sort((a, b) => b.revenue - a.revenue);
 
   return (
     <div className="fade-up">
@@ -1294,7 +1301,7 @@ const [membershipErr, setMembershipErr] = useState("");
     has_membership: false, membership_card_no: "", membership_start: "", membership_end: "", notes: "",
   };
   const [form, setForm] = useState(blankForm);
-  const [items, setItems] = useState([{ service_id: "" }]);
+  const [items, setItems] = useState([{ service_id: "", staff_ids: [] }]);
   const [customerForm, setCustomerForm] = useState(blankCustomer);
   
   const hasMembershipService = items.some(item => {
@@ -1341,7 +1348,7 @@ const [membershipErr, setMembershipErr] = useState("");
   const gstAmount         = +(taxableSubtotal * 0.05).toFixed(2);
   const total             = +(taxableSubtotal + gstAmount).toFixed(2);
 
-  const canSaveBill = !!form.customer_id && !!form.employee_id && items.some(item => item.service_id);
+  const canSaveBill = !!form.customer_id && items.some(item => item.service_id);
   const canSaveCustomer = customerForm.name.trim().length > 0;
 
   const syncCustomerTotals = async (customerId) => {
@@ -1365,7 +1372,7 @@ const [membershipErr, setMembershipErr] = useState("");
   // ── open modals ─────────────────────────────────────────────────────────────
   const openAdd = () => {
     setForm({ ...blankForm, bill_date: dateRange.start || today() });
-    setItems([{ service_id: "" }]);
+    setItems([{ service_id: "", staff_ids: [] }]);
     setServiceSearch([""]);
     setServiceOpen([false]);
     setApiErr("");
@@ -1375,8 +1382,13 @@ const [membershipErr, setMembershipErr] = useState("");
 
   const openEdit = (bill) => {
     const lineItems = Array.isArray(bill.line_items) && bill.line_items.length
-      ? bill.line_items.map(row => ({ service_id: row.service_id }))
-      : [{ service_id: bill.service_id || "" }];
+      ? bill.line_items.map(row => ({
+          service_id: row.service_id,
+          staff_ids: Array.isArray(row.staff_ids)
+            ? row.staff_ids.filter(Boolean)
+            : (row.employee_id ? [row.employee_id] : []),
+        }))
+      : [{ service_id: bill.service_id || "", staff_ids: [] }];
 
     setForm({
       customer_id:     bill.customer_id    || "",
@@ -1403,9 +1415,10 @@ const [membershipErr, setMembershipErr] = useState("");
   };
 
   // ── item helpers ────────────────────────────────────────────────────────────
-  const addItem    = () => { setItems([...items, { service_id: "" }]); setServiceSearch([...serviceSearch, ""]); setServiceOpen([...serviceOpen, false]); };
+  const addItem    = () => { setItems([...items, { service_id: "", staff_ids: [] }]); setServiceSearch([...serviceSearch, ""]); setServiceOpen([...serviceOpen, false]); };
   const removeItem = (index) => { setItems(items.filter((_, i) => i !== index)); setServiceSearch(serviceSearch.filter((_, i) => i !== index)); setServiceOpen(serviceOpen.filter((_, i) => i !== index)); };
   const updateItem = (index, service_id) => setItems(items.map((item, i) => i === index ? { ...item, service_id } : item));
+  const updateItemStaff = (index, staff_ids) => setItems(items.map((item, i) => i === index ? { ...item, staff_ids } : item));
   const updateCustomer = (customer_id) => {
     const customer = customers.find(c => c.id === customer_id);
     const isMember = customer?.has_membership || !!customer?.membership_card_no;
@@ -1446,25 +1459,34 @@ const [membershipErr, setMembershipErr] = useState("");
 
   // ── build payload (shared by save & update) ─────────────────────────────────
   const buildPayload = () => {
-    const selected = items.map(item => services.find(s => s.id === item.service_id)).filter(Boolean);
-    if (!form.customer_id || !form.employee_id || selected.length === 0 || !form.bill_date) return null;
+    const selectedItems = items.filter(item => item.service_id);
+    if (!form.customer_id || selectedItems.length === 0 || !form.bill_date) return null;
     const customer = customers.find(c => c.id === form.customer_id);
-    const employee = employees.find(e => e.id === form.employee_id);
-    if (!customer || !employee) return null;
+    if (!customer) return null;
 
-    const rows = selected.map(service => {
+    const rows = selectedItems.map(item => {
+      const service = services.find(s => s.id === item.service_id);
+      if (!service) return null;
+      const staffIds = Array.isArray(item.staff_ids) ? item.staff_ids.filter(Boolean) : [];
+      const staffNames = staffIds.map(id => employees.find(e => e.id === id)?.name).filter(Boolean);
       const general = generalFor(service);
       const rate    = priceFor(service, form.pricing_type);
       return {
         service_id:    service.id,
         service_name:  service.name,
+        employee_id:   staffIds[0] || null,
+        employee_name: staffNames.join(", ") || null,
+        staff_ids:     staffIds,
+        staff_names:   staffNames,
         qty:           1,
         general_price: general,
         rate,
         amount:        rate,
         discount:      Math.max(general - rate, 0),
       };
-    });
+    }).filter(Boolean);
+
+    if (rows.length === 0) return null;
 
     const original      = rows.reduce((sum, row) => sum + row.general_price, 0);
     const base          = rows.reduce((sum, row) => sum + row.amount, 0);        // after membership discount
@@ -1476,10 +1498,9 @@ const [membershipErr, setMembershipErr] = useState("");
 
     return {
       customer_id:      customer.id,
-      employee_id:      employee.id,
       service_id:       rows[0]?.service_id || null,
       customer_name:    customer.name,
-      employee_name:    employee.name,
+      employee_name:    rows.map(row => row.employee_name).filter(Boolean).join(", ") || null,
       service_name:     rows.map(row => row.service_name).join(", "),
       service_price:    original,
       subtotal:         original,
@@ -1495,6 +1516,48 @@ const [membershipErr, setMembershipErr] = useState("");
       payment_mode:     form.payment_mode,
       notes:            form.notes,
     };
+  };
+
+  const buildBillRows = () => {
+    const selectedItems = items.filter(item => item.service_id);
+    if (!form.customer_id || selectedItems.length === 0 || !form.bill_date) return [];
+    const customer = customers.find(c => c.id === form.customer_id);
+    if (!customer) return [];
+
+    return selectedItems.map(item => {
+      const service = services.find(s => s.id === item.service_id);
+      if (!service) return null;
+      const staffIds = Array.isArray(item.staff_ids) ? item.staff_ids.filter(Boolean) : [];
+      const staffNames = staffIds.map(id => employees.find(e => e.id === id)?.name).filter(Boolean);
+      const general = generalFor(service);
+      const rate = priceFor(service, form.pricing_type);
+      return {
+        service_id:    service.id,
+        service_name:  service.name,
+        employee_id:   staffIds[0] || null,
+        employee_name: staffNames.join(", ") || null,
+        staff_ids:     staffIds,
+        staff_names:   staffNames,
+        qty:           1,
+        general_price: general,
+        rate,
+        amount:        rate,
+        discount:      Math.max(general - rate, 0),
+      };
+    }).filter(Boolean);
+  };
+
+  const getNextInvoiceNo = async () => {
+    const { data: lastRow, error } = await supabase.from("bills")
+      .select("invoice_no")
+      .order("invoice_no", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error && error.details !== "Results contain 0 rows") {
+      console.error("Failed to get next invoice number", error.message || error);
+      return null;
+    }
+    return (lastRow?.invoice_no || 0) + 1;
   };
 
   // ── Add this function inside Billing (near other helpers) ──
@@ -1517,55 +1580,57 @@ const saveMembership = async () => {
   // ── save (insert) ───────────────────────────────────────────────────────────
   // ── Replace your existing save function ──
 const save = async () => {
-  const payload = buildPayload();
-  if (!payload) return;
-  setSaving(true); setApiErr("");
-  const { data, error: err } = await supabase.from("bills").insert([payload]).select().single();
-  setSaving(false);
-  if (err) { setApiErr(err.message); return; }
-  await syncCustomerTotals(payload.customer_id);
-  await reload();
-  setModal(null);
+    const payload = buildPayload();
+    if (!payload) return;
 
-  // If a membership service was purchased, open membership modal
-  if (hasMembershipService && payload.customer_id) {
-    const customer = customers.find(c => c.id === payload.customer_id);
-    setMembershipCustomerId(payload.customer_id);
-    setMembershipForm({
-      membership_card_no: customer?.membership_card_no || "",
-      membership_start: customer?.membership_start || today(),
-      membership_end: customer?.membership_end || "",
-    });
-    setMembershipErr("");
-    setMembershipModal(true);
-  }
-};
+    setSaving(true); setApiErr("");
+    const { data, error: err } = await supabase.from("bills").insert([payload]).select().single();
+    setSaving(false);
+    if (err) { setApiErr(err.message); return; }
 
-  // ── Replace your existing saveAndPrint function ──
-const saveAndPrint = async () => {
-  const payload = buildPayload();
-  if (!payload) return;
-  setSaving(true); setApiErr("");
-  const { data, error: err } = await supabase.from("bills").insert([payload]).select().single();
-  setSaving(false);
-  if (err) { setApiErr(err.message); return; }
-  await syncCustomerTotals(data?.customer_id || payload.customer_id);
-  await reload();
-  setModal(null);
-  if (data) printBill(data);
+    await syncCustomerTotals(payload.customer_id);
+    await reload();
+    setModal(null);
 
-  if (hasMembershipService && payload.customer_id) {
-    const customer = customers.find(c => c.id === payload.customer_id);
-    setMembershipCustomerId(payload.customer_id);
-    setMembershipForm({
-      membership_card_no: customer?.membership_card_no || "",
-      membership_start: customer?.membership_start || today(),
-      membership_end: customer?.membership_end || "",
-    });
-    setMembershipErr("");
-    setMembershipModal(true);
-  }
-};
+    if (hasMembershipService && payload.customer_id) {
+      const customerObj = customers.find(c => c.id === payload.customer_id);
+      setMembershipCustomerId(payload.customer_id);
+      setMembershipForm({
+        membership_card_no: customerObj?.membership_card_no || "",
+        membership_start: customerObj?.membership_start || today(),
+        membership_end: customerObj?.membership_end || "",
+      });
+      setMembershipErr("");
+      setMembershipModal(true);
+    }
+  };
+  const saveAndPrint = async () => {
+    const payload = buildPayload();
+    if (!payload) return;
+
+    setSaving(true); setApiErr("");
+    const { data, error: err } = await supabase.from("bills").insert([payload]).select().single();
+    setSaving(false);
+    if (err) { setApiErr(err.message); return; }
+
+    await syncCustomerTotals(payload.customer_id);
+    await reload();
+    setModal(null);
+
+    if (data) printBill(data);
+
+    if (hasMembershipService && payload.customer_id) {
+      const customer = customers.find(c => c.id === payload.customer_id);
+      setMembershipCustomerId(payload.customer_id);
+      setMembershipForm({
+        membership_card_no: customer?.membership_card_no || "",
+        membership_start: customer?.membership_start || today(),
+        membership_end: customer?.membership_end || "",
+      });
+      setMembershipErr("");
+      setMembershipModal(true);
+    }
+  };
 
   // ── update (edit) ───────────────────────────────────────────────────────────
   const update = async () => {
@@ -1823,6 +1888,7 @@ const saveAndPrint = async () => {
       ? bill.line_items
       : [{
           service_name:  bill.service_name || getName(services, bill.service_id),
+          employee_name: bill.employee_name || employee,
           qty:           1,
           general_price: bill.service_price ?? bill.subtotal ?? 0,
           rate:          bill.subtotal ?? bill.service_price ?? 0,
@@ -1874,14 +1940,22 @@ const saveAndPrint = async () => {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => (
-              <tr key={`${row.service_id || row.service_name}-${index}`}>
-                <td style={{ padding: "5px 0", fontWeight: 700 }}>{row.service_name}</td>
-                <td style={{ padding: "5px 0", textAlign: "right" }}>{row.qty || 1}</td>
-                <td style={{ padding: "5px 0", textAlign: "right" }}>{money(row.general_price ?? row.rate ?? row.amount)}</td>
-                <td style={{ padding: "5px 0", textAlign: "right" }}>{money(row.general_price ?? row.amount ?? row.rate)}</td>
-              </tr>
-            ))}
+            {rows.map((row, index) => {
+              const rowStaff = Array.isArray(row.staff_names)
+                ? row.staff_names.join(", ")
+                : (row.employee_name || row.staff_name || employee || "-");
+              return (
+                <tr key={`${row.service_id || row.service_name}-${index}`}>
+                  <td style={{ padding: "5px 0", fontWeight: 700 }}>
+                    <div>{row.service_name}</div>
+                    <div style={{ fontSize: printMode ? 8 : ".68rem", fontWeight: 600, color: muted, marginTop: 2 }}>Staff: {rowStaff}</div>
+                  </td>
+                  <td style={{ padding: "5px 0", textAlign: "right" }}>{row.qty || 1}</td>
+                  <td style={{ padding: "5px 0", textAlign: "right" }}>{money(row.general_price ?? row.rate ?? row.amount)}</td>
+                  <td style={{ padding: "5px 0", textAlign: "right" }}>{money(row.general_price ?? row.amount ?? row.rate)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
 
@@ -1934,12 +2008,6 @@ const saveAndPrint = async () => {
             <Btn small ghost onClick={openCustomerModal}><Icon d={I.add} size={13} /> Add</Btn>
           </div>
         </Field>
-        <Field label="Staff">
-          <select style={IS} value={form.employee_id} onChange={e => setForm({ ...form, employee_id: e.target.value })}>
-            <option value="">- select -</option>
-            {employees.filter(e => e.status === "active").map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </select>
-        </Field>
       </div>
 
       <Field label="Price Type">
@@ -1958,12 +2026,13 @@ const saveAndPrint = async () => {
           {items.map((item, index) => {
             const q        = (serviceSearch[index] || "").toLowerCase();
             const selected = services.find(s => s.id === item.service_id);
+            const staffName = (item.staff_ids && item.staff_ids[0]) ? (employees.find(e => e.id === item.staff_ids[0])?.name || "") : "";
             const choices  = services.filter(s => s.is_active && (!q || s.name.toLowerCase().includes(q) || (s.category || "").toLowerCase().includes(q)));
             return (
-              <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", position: "relative" }}>
+              <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr 180px 48px", gap: 8, alignItems: "center", position: "relative" }}>
                 <div style={{ position: "relative", width: "100%" }}>
                   <button onClick={() => setServiceOpen(serviceOpen.map((v, i) => i === index ? !v : v))} style={{ ...IS, textAlign: "left", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span>{selected ? `${selected.name} - ${money(priceFor(selected))}` : "- select -"}</span>
+                    <span>{selected ? `${selected.name}${staffName ? ' · ' + staffName : ''} - ${money(priceFor(selected))}` : "- select -"}</span>
                     <span style={{ color: "var(--muted)", fontSize: ".85rem" }}>▾</span>
                   </button>
                   {serviceOpen[index] && (
@@ -1981,6 +2050,16 @@ const saveAndPrint = async () => {
                     </div>
                   )}
                 </div>
+                <div style={{ width: "100%" }}>
+                  <select
+                    style={{ ...IS, width: "100%", minHeight: 44 }}
+                    value={item.staff_ids?.[0] || ""}
+                    onChange={e => updateItemStaff(index, e.target.value ? [e.target.value] : [])}
+                  >
+                    <option value="">- select staff -</option>
+                    {employees.filter(e => e.status === "active").map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                </div>
                 <button
                   onClick={() => items.length > 1 && removeItem(index)}
                   disabled={items.length === 1}
@@ -1989,7 +2068,7 @@ const saveAndPrint = async () => {
                   <Icon d={I.del} size={14} />
                 </button>
                 {selected && (
-                  <div style={{ gridColumn: "1 / -1", fontSize: ".76rem", color: "var(--muted)" }}>
+                  <div style={{ gridColumn: "1 / -1", fontSize: ".76rem", color: "var(--muted)", marginTop: 6 }}>
                     General {money(generalFor(selected))} · Selected {money(priceFor(selected))} · Discount {money(Math.max(generalFor(selected) - priceFor(selected), 0))}
                   </div>
                 )}
@@ -2440,13 +2519,13 @@ export default function App() {
   }, [isAdmin, tab]);
 
   if (session === undefined) {
-    return (<><style>{CSS}</style><Loading msg="Initialising…" /></>);
+    return (<>{typeof CSS === "string" ? <style>{CSS}</style> : null}<Loading msg="Initialising…" /></>);
   }
 
   if (!session) {
     return (
       <>
-        <style>{CSS}</style>
+        {typeof CSS === "string" ? <style>{CSS}</style> : null}
         {authPage === "login"  && <LoginPage  onForgot={() => setAuthPage("forgot")} />}
         {authPage === "forgot" && <ForgotPage onBack={() => setAuthPage("login")} />}
       </>
@@ -2455,7 +2534,7 @@ export default function App() {
 
   return (
     <>
-      <style>{CSS}</style>
+    {typeof CSS === "string" ? <style>{CSS}</style> : null}
       <div data-theme={theme} style={{ display: "flex", height: "100vh", overflow: "hidden", background: "var(--bg)", color: "var(--text)" }}>
 
         {/* Sidebar */}
