@@ -389,20 +389,28 @@ function OwnerDashboard({ employees, customers, services, bills }) {
       }));
       const lineTotal = items.reduce((sum, item) => sum + Number(item.amount || item.rate || 0), 0);
       const billTotal = Number(bill.total_amount ?? 0);
+      const taxableBill = billTotal > 0 ? +(billTotal / 1.05).toFixed(2) : lineTotal;
       if (billTotal > 0 && lineTotal > 0) {
         return items.map(item => ({
           ...item,
           billedAmount: (Number(item.amount || item.rate || 0) / lineTotal) * billTotal,
+          taxableAmount: (Number(item.amount || item.rate || 0) / lineTotal) * taxableBill,
         }));
       }
-      return items;
+      return items.map(item => ({
+        ...item,
+        taxableAmount: Number(item.amount || item.rate || 0),
+      }));
     }
     const fallbackAmount = Number(bill.subtotal ?? bill.service_price ?? bill.total_amount ?? 0);
+    const billTotal = Number(bill.total_amount ?? 0);
+    const taxableAmount = billTotal > 0 ? +(billTotal / 1.05).toFixed(2) : fallbackAmount;
     return [{
       qty:          bill.qty ?? 1,
       rate:         fallbackAmount,
       amount:       fallbackAmount,
       billedAmount: Number(bill.total_amount ?? fallbackAmount),
+      taxableAmount,
       discount:     bill.discount_amount ?? bill.manual_discount ?? 0,
       staff_ids:    bill.staff_ids || (bill.employee_id ? [bill.employee_id] : []),
       service_id:   bill.service_id,
@@ -428,7 +436,7 @@ function OwnerDashboard({ employees, customers, services, bills }) {
     .filter(e => e.status === "active" && String(e.role || "").trim().toLowerCase() !== "manager")
     .map(emp => {
       const empItems = dayBills.flatMap(b => getBillLineItems(b).filter(item => item.employee_id === emp.id));
-      const billRevenue = empItems.reduce((sum, item) => sum + Number(item.billedAmount ?? item.amount ?? item.rate ?? 0), 0);
+      const billRevenue = empItems.reduce((sum, item) => sum + Number(item.taxableAmount ?? item.amount ?? item.rate ?? 0), 0);
       const totalRevenue = billRevenue;
       const salary = Number(emp.salary || 0);
       const target = Number(emp.target_amount || 0);
@@ -469,7 +477,7 @@ function OwnerDashboard({ employees, customers, services, bills }) {
     .filter(e => e.status === "active" && String(e.role || "").trim().toLowerCase() !== "manager")
     .map(emp => {
       const empItems = monthBills.flatMap(b => getBillLineItems(b).filter(item => item.employee_id === emp.id));
-      const billRevenue = empItems.reduce((sum, item) => sum + Number(item.billedAmount ?? item.amount ?? item.rate ?? 0), 0);
+      const billRevenue = empItems.reduce((sum, item) => sum + Number(item.taxableAmount ?? item.amount ?? item.rate ?? 0), 0);
       const totalRevenue = billRevenue;
       const salary = Number(emp.salary || 0);
       const target = Number(emp.target_amount || 0);
