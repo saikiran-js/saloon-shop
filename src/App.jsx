@@ -381,11 +381,28 @@ function OwnerDashboard({ employees, customers, services, bills }) {
   const birthdayCount = birthdayCustomers.length;
 
   const getBillLineItems = (bill) => {
-    if (Array.isArray(bill.line_items) && bill.line_items.length) return bill.line_items;
+    if (Array.isArray(bill.line_items) && bill.line_items.length) {
+      const items = bill.line_items.map(item => ({
+        ...item,
+        amount: Number(item.amount ?? item.rate ?? 0),
+        rate: Number(item.rate ?? item.amount ?? 0),
+      }));
+      const lineTotal = items.reduce((sum, item) => sum + Number(item.amount || item.rate || 0), 0);
+      const billTotal = Number(bill.total_amount ?? 0);
+      if (billTotal > 0 && lineTotal > 0) {
+        return items.map(item => ({
+          ...item,
+          billedAmount: (Number(item.amount || item.rate || 0) / lineTotal) * billTotal,
+        }));
+      }
+      return items;
+    }
+    const fallbackAmount = Number(bill.subtotal ?? bill.service_price ?? bill.total_amount ?? 0);
     return [{
       qty:          bill.qty ?? 1,
-      rate:         bill.subtotal ?? bill.service_price ?? bill.total_amount ?? 0,
-      amount:       bill.subtotal ?? bill.service_price ?? bill.total_amount ?? 0,
+      rate:         fallbackAmount,
+      amount:       fallbackAmount,
+      billedAmount: Number(bill.total_amount ?? fallbackAmount),
       discount:     bill.discount_amount ?? bill.manual_discount ?? 0,
       staff_ids:    bill.staff_ids || (bill.employee_id ? [bill.employee_id] : []),
       service_id:   bill.service_id,
@@ -398,12 +415,20 @@ function OwnerDashboard({ employees, customers, services, bills }) {
   };
 
   const dayBills = bills.filter(b => b.bill_date >= selectedStart && b.bill_date <= selectedEnd);
+  const dayCash = dayBills
+    .filter(b => String(b.payment_mode || "").toLowerCase().includes("cash"))
+    .reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+  const dayUpi = dayBills
+    .filter(b => String(b.payment_mode || "").toLowerCase().includes("upi"))
+    .reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+  const dayDiscount = dayBills
+    .reduce((sum, b) => sum + Number(b.discount_amount ?? b.manual_discount ?? 0), 0);
 
   const staffPerformance = employees
-    .filter(e => e.status === "active")
+    .filter(e => e.status === "active" && String(e.role || "").trim().toLowerCase() !== "manager")
     .map(emp => {
       const empItems = dayBills.flatMap(b => getBillLineItems(b).filter(item => item.employee_id === emp.id));
-      const billRevenue = empItems.reduce((sum, item) => sum + Number(item.amount || item.rate || 0), 0);
+      const billRevenue = empItems.reduce((sum, item) => sum + Number(item.billedAmount ?? item.amount ?? item.rate ?? 0), 0);
       const totalRevenue = billRevenue;
       const salary = Number(emp.salary || 0);
       const target = Number(emp.target_amount || 0);
@@ -441,10 +466,10 @@ function OwnerDashboard({ employees, customers, services, bills }) {
   const rankColors = ["#f59e0b", "#94a3b8", "#cd7c54", "#7c6fa0", "#7c6fa0"];
   const rankEmojis = ["🥇", "🥈", "🥉"];
   const monthStaffPerformance = employees
-    .filter(e => e.status === "active")
+    .filter(e => e.status === "active" && String(e.role || "").trim().toLowerCase() !== "manager")
     .map(emp => {
       const empItems = monthBills.flatMap(b => getBillLineItems(b).filter(item => item.employee_id === emp.id));
-      const billRevenue = empItems.reduce((sum, item) => sum + Number(item.amount || item.rate || 0), 0);
+      const billRevenue = empItems.reduce((sum, item) => sum + Number(item.billedAmount ?? item.amount ?? item.rate ?? 0), 0);
       const totalRevenue = billRevenue;
       const salary = Number(emp.salary || 0);
       const target = Number(emp.target_amount || 0);
@@ -467,9 +492,10 @@ function OwnerDashboard({ employees, customers, services, bills }) {
      <div style={{ marginBottom: 16 }}>
        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: "1rem" }}>
          <StatCard label="Today's Revenue" value={fmt(totalDayRevenue)} sub="completed payments" accent="#34d399" />
-         <StatCard label="This Month Revenue" value={fmt(monthRevenue)} sub={`${monthNames[calMonth.month]} revenue`} accent="var(--accent)" />
+         <StatCard label="Cash Today" value={fmt(dayCash)} sub="cash payments" accent="#f59e0b" />
+         <StatCard label="UPI Today" value={fmt(dayUpi)} sub="upi payments" accent="#60a5fa" />
+         <StatCard label="Discount Today" value={fmt(dayDiscount)} sub="total discount" accent="#f472b6" />
          <StatCard label="Customers Today" value={customersTodayCount} sub="unique visitors" accent="#60a5fa" />
-         <StatCard label="Birthdays" value={birthdayCount} sub={selectedStart === selectedEnd ? `on ${selectedStart}` : `in selected range`} accent="#fbbf24" />
          <StatCard label="Customers This Month" value={customersMonthCount} sub={`${monthNames[calMonth.month]} visitors`} accent="#f59e0b" />
        </div>
      </div>
@@ -715,6 +741,235 @@ function OwnerDashboard({ employees, customers, services, bills }) {
 // ─────────────────────────────────────────────────────────────
 // LEGACY DASHBOARD (generic overview — kept for non-dashboard tabs)
 // ─────────────────────────────────────────────────────────────
+function StaffDashboard({ employees, customers, services, bills }) {
+  const [selectedRange, setSelectedRange] = useState({ start: today(), end: today() });
+  const [calMonth, setCalMonth] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+
+  const getName = (list, id) => list.find(x => x.id === id)?.name || "—";
+  const getService = (id) => services.find(s => s.id === id);
+  const daysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
+  const firstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
+  const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+  const prevMonth = () => setCalMonth(p => {
+    const m = p.month === 0 ? 11 : p.month - 1;
+    const y = p.month === 0 ? p.year - 1 : p.year;
+    return { year: y, month: m };
+  });
+  const nextMonth = () => setCalMonth(p => {
+    const m = p.month === 11 ? 0 : p.month + 1;
+    const y = p.month === 11 ? p.year + 1 : p.year;
+    return { year: y, month: m };
+  });
+
+  const apptsByDate = {};
+  bills.forEach(b => {
+    if (!b.bill_date) return;
+    apptsByDate[b.bill_date] = (apptsByDate[b.bill_date] || 0) + 1;
+  });
+
+  const { start: selectedStart, end: selectedEnd } = selectedRange;
+  const selectDashboardDate = (dateStr) => {
+    if (!selectedStart || !selectedEnd || selectedStart !== selectedEnd) {
+      setSelectedRange({ start: dateStr, end: dateStr });
+      return;
+    }
+    if (dateStr >= selectedStart) {
+      setSelectedRange({ start: selectedStart, end: dateStr });
+    } else {
+      setSelectedRange({ start: dateStr, end: selectedStart });
+    }
+  };
+
+  const selectedDates = [];
+  if (selectedStart && selectedEnd) {
+    const start = new Date(selectedStart);
+    const end = new Date(selectedEnd);
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      selectedDates.push(d.toISOString().slice(0, 10));
+    }
+  }
+
+  const selectedMonthDays = new Set(selectedDates.map(d => d.slice(5)));
+  const birthdayCustomers = customers.filter(c => c.dob && selectedMonthDays.has(c.dob.slice(5)));
+  const birthdayCount = birthdayCustomers.length;
+
+  const dayBills = bills.filter(b => b.bill_date >= selectedStart && b.bill_date <= selectedEnd);
+
+  const staffPerformance = employees
+    .filter(e => e.status === "active" && String(e.role || "").trim().toLowerCase() !== "manager")
+    .map(emp => {
+      const empItems = dayBills.filter(b => b.employee_id === emp.id);
+      const billRevenue = empItems.reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+      const salary = Number(emp.salary || 0);
+      const target = Number(emp.target_amount || 0);
+      const pct = target > 0 ? Math.min((billRevenue / target) * 100, 150) : 0;
+      return {
+        ...emp,
+        appts: empItems.length,
+        completed: empItems.length,
+        revenue: billRevenue,
+        billRevenue,
+        target,
+        pct,
+        bonus: billRevenue >= target ? 2500 : 0,
+        achieved: target > 0 ? billRevenue >= target : false,
+      };
+    })
+    .sort((a, b) => b.pct - a.pct);
+
+  const monthStr = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, "0")}`;
+  const monthBills = bills.filter(b => String(b.bill_date || "").startsWith(monthStr));
+  const monthRevenue = monthBills.reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+
+  const monthStaffPerformance = employees
+    .filter(e => e.status === "active" && String(e.role || "").trim().toLowerCase() !== "manager")
+    .map(emp => {
+      const empItems = monthBills.filter(b => b.employee_id === emp.id);
+      const billRevenue = empItems.reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+      const target = Number(emp.target_amount || 0);
+      return {
+        ...emp,
+        revenue: billRevenue,
+        billRevenue,
+        target,
+        pct: target > 0 ? Math.min((billRevenue / target) * 100, 150) : 0,
+        completed: empItems.length,
+        achieved: target > 0 ? billRevenue >= target : false,
+      };
+    })
+    .sort((a, b) => b.revenue - a.revenue);
+
+  const totalDayRevenue = staffPerformance.reduce((s, e) => s + e.revenue, 0);
+  const todaySalesCount = bills.filter(b => b.bill_date === today()).length;
+
+  return (
+    <div className="fade-up">
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: "1rem" }}>
+          <StatCard label="Today's Revenue" value={fmt(totalDayRevenue)} sub="day total" accent="#34d399" />
+          <StatCard label="This Month Revenue" value={fmt(monthRevenue)} sub={`${monthNames[calMonth.month]} revenue`} accent="var(--accent)" />
+          <StatCard label="Today's Sales" value={todaySalesCount} sub="transactions" accent="#60a5fa" />
+          <StatCard label="Customers Today" value={new Set(dayBills.map(b => b.customer_id || b.customer_name)).size} sub="unique visitors" accent="#f59e0b" />
+          <StatCard label="Birthdays" value={birthdayCount} sub="in selected period" accent="#fbbf24" />
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr 1fr", gap: "1.25rem", alignItems: "start" }}>
+        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <button onClick={prevMonth} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex" }}>
+              <Icon d="M15 18l-6-6 6-6" size={16} />
+            </button>
+            <h4 style={{ margin: 0, fontSize: ".88rem", fontWeight: 700, color: "var(--text)" }}>
+              {monthNames[calMonth.month]} {calMonth.year}
+            </h4>
+            <button onClick={nextMonth} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex" }}>
+              <Icon d="M9 18l6-6-6-6" size={16} />
+            </button>
+          </div>
+          <div style={{ padding: "1rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", marginBottom: 6 }}>
+              {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+                <div key={d} style={{ textAlign: "center", fontSize: ".68rem", fontWeight: 700, color: "var(--muted)", padding: "2px 0" }}>{d}</div>
+              ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2 }}>
+              {Array(firstDayOfMonth(calMonth.year, calMonth.month)).fill(null).map((_, i) => <div key={`e${i}`} />)}
+              {Array(daysInMonth(calMonth.year, calMonth.month)).fill(null).map((_, i) => {
+                const day = i + 1;
+                const dateStr = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                const isSelected = dateStr >= selectedStart && dateStr <= selectedEnd;
+                const isToday = dateStr === today();
+                const hasAppts = apptsByDate[dateStr] > 0;
+                return (
+                  <button key={day} onClick={() => selectDashboardDate(dateStr)} style={{ position: "relative", width: "100%", aspectRatio: "1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", borderRadius: 8, border: isToday ? "1px solid var(--accent)" : "1px solid transparent", background: isSelected ? "var(--accent)" : "none", color: isSelected ? "var(--bg)" : isToday ? "var(--accent)" : "var(--text)", cursor: "pointer", fontWeight: isToday || isSelected ? 700 : 500, fontSize: ".82rem" }}>
+                    {day}
+                    {hasAppts && !isSelected && <div style={{ position: "absolute", bottom: 3, width: 4, height: 4, borderRadius: "50%", background: "var(--accent)" }} />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{ padding: "0 1rem 1rem", borderTop: "1px solid var(--border)", paddingTop: "0.875rem", marginTop: "-1px" }}>
+            <div style={{ fontSize: ".75rem", color: "var(--muted)", marginBottom: 4 }}>
+              Selected: <strong style={{ color: "var(--text)" }}>{selectedStart === selectedEnd ? selectedStart : `${selectedStart} – ${selectedEnd}`}</strong>
+            </div>
+            <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>Month revenue: <strong style={{ color: "var(--accent)" }}>{fmt(monthRevenue)}</strong></div>
+            <div style={{ fontSize: ".75rem", color: "var(--muted)", marginTop: 2 }}>Day total: <strong style={{ color: "#34d399" }}>{fmt(totalDayRevenue)}</strong></div>
+          </div>
+        </div>
+
+        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h4 style={{ margin: 0, fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Period Performance</h4>
+          </div>
+          <div style={{ padding: "1rem" }}>
+            {staffPerformance.length === 0 ? (
+              <div style={{ color: "var(--muted)", fontSize: ".88rem" }}>No staff performance data for this period.</div>
+            ) : staffPerformance.map((emp, idx) => (
+              <div key={emp.id} style={{ background: emp.achieved ? "rgba(52,211,153,.04)" : "var(--bg)", border: `1px solid ${emp.achieved ? "rgba(52,211,153,.2)" : "var(--border)"}`, borderRadius: 12, padding: "1rem", marginBottom: ".75rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: `rgba(${idx === 0 ? "245,158,11" : idx === 1 ? "148,163,184" : idx === 2 ? "205,124,84" : "124,111,160"},.2)`, color: idx === 0 ? "#f59e0b" : idx === 1 ? "#94a3b8" : idx === 2 ? "#cd7c54" : "#7c6fa0", fontWeight: 800, fontSize: ".82rem", flexShrink: 0 }}>
+                      {idx < 3 ? ["🥇","🥈","🥉"][idx] : `#${idx + 1}`}
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: ".92rem", color: "var(--text)" }}>{emp.name}</div>
+                      <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>{emp.role || "Staff"} · {emp.completed} completed · {emp.appts} billed</div>
+                      <div style={{ fontSize: ".72rem", color: "var(--muted)", marginTop: 2 }}>Revenue {fmt(emp.revenue)}</div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "1.1rem", fontWeight: 800, color: emp.achieved ? "#34d399" : "var(--text)" }}>{fmt(emp.revenue)}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h4 style={{ margin: 0, fontSize: ".82rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Monthly Ranking</h4>
+            <span style={{ fontSize: ".75rem", color: "var(--accent)", fontWeight: 700 }}>{fmt(monthRevenue)}</span>
+          </div>
+          <div style={{ padding: "1rem" }}>
+            {monthStaffPerformance.length === 0 ? (
+              <div style={{ color: "var(--muted)", fontSize: ".88rem" }}>No monthly ranking data.</div>
+            ) : monthStaffPerformance.map((emp, idx) => (
+              <div key={emp.id} style={{ padding: ".9rem", border: "1px solid var(--border)", borderRadius: 10, marginBottom: ".75rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>{idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : `#${idx + 1}`} {emp.name}</div>
+                    <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>{emp.completed} completed services</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontWeight: 800, color: "var(--accent)" }}>{fmt(emp.revenue)}</div>
+                    <div style={{ fontSize: ".7rem", color: "var(--muted)" }}>{Math.min(emp.pct, 100).toFixed(0)}%</div>
+                  </div>
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ height: 10, background: "rgba(255,255,255,.06)", borderRadius: 6, overflow: "hidden" }}>
+                    <div style={{ width: `${Math.min(emp.pct, 100)}%`, height: "100%", background: emp.pct >= 100 ? "#34d399" : "var(--accent)", transition: "width .25s ease" }} />
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: ".72rem", color: "var(--muted)" }}>
+                    <span>Target progress</span>
+                    <span>{Math.min(emp.pct, 100).toFixed(0)}% of 100%</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({ employees, customers, services, bills }) {
   const active      = services.filter(s => s.is_active);
   const cats        = {};
@@ -1280,6 +1535,7 @@ function Billing({ bills, reload, employees, customers, services, isAdmin, setTa
   const [deleting, setDeleting]   = useState(false);
   const [apiErr, setApiErr]       = useState("");
   const [dashboardPopup, setDashboardPopup] = useState(false);
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
 
   // ── Add this state inside Billing component (near other useState declarations) ──
 const [membershipModal, setMembershipModal] = useState(false);
@@ -1293,7 +1549,7 @@ const [membershipErr, setMembershipErr] = useState("");
 
 
   const blankForm = {
-    customer_id: "", employee_id: "", bill_date: today(), bill_time: "10:00",
+    customer_id: "", customer_phone: "", employee_id: "", bill_date: today(), bill_time: "10:00",
     pricing_type: "general", manual_discount: 0, payment_mode: "Cash", notes: "",
   };
   const blankCustomer = {
@@ -1348,6 +1604,17 @@ const [membershipErr, setMembershipErr] = useState("");
   const gstAmount         = +(taxableSubtotal * 0.05).toFixed(2);
   const total             = +(taxableSubtotal + gstAmount).toFixed(2);
 
+  const normalizePhone = (value) => String(value || "").replace(/\D/g, "");
+  const findCustomerByPhone = (phone) => {
+    const normalized = normalizePhone(phone);
+    if (!normalized) return null;
+    return customers.find(c => normalizePhone(c.phone) === normalized) || null;
+  };
+  const matchedCustomer = findCustomerByPhone(form.customer_phone);
+  const customerPhoneResults = form.customer_phone.trim()
+    ? customers.filter(c => normalizePhone(c.phone).includes(normalizePhone(form.customer_phone)) || (c.name || "").toLowerCase().includes(form.customer_phone.toLowerCase()))
+    : [];
+
   const canSaveBill = !!form.customer_id && items.some(item => item.service_id);
   const canSaveCustomer = customerForm.name.trim().length > 0;
 
@@ -1390,8 +1657,10 @@ const [membershipErr, setMembershipErr] = useState("");
         }))
       : [{ service_id: bill.service_id || "", staff_ids: [] }];
 
+    const customerById = customers.find(c => c.id === bill.customer_id);
     setForm({
       customer_id:     bill.customer_id    || "",
+      customer_phone:  customerById?.phone || "",
       employee_id:     bill.employee_id    || "",
       bill_date:       bill.bill_date      || today(),
       bill_time:       bill.bill_time      || "10:00",
@@ -1422,7 +1691,30 @@ const [membershipErr, setMembershipErr] = useState("");
   const updateCustomer = (customer_id) => {
     const customer = customers.find(c => c.id === customer_id);
     const isMember = customer?.has_membership || !!customer?.membership_card_no;
-    setForm({ ...form, customer_id, pricing_type: isMember ? "membership" : "general" });
+    setForm({ ...form, customer_id, customer_phone: customer?.phone || "", pricing_type: isMember ? "membership" : "general" });
+  };
+
+  const updateCustomerByPhone = (phone) => {
+    const customer = findCustomerByPhone(phone);
+    const pricing_type = customer?.has_membership || !!customer?.membership_card_no ? "membership" : "general";
+    setForm(prev => ({
+      ...prev,
+      customer_phone: phone,
+      customer_id: customer?.id || "",
+      pricing_type: customer ? pricing_type : prev.pricing_type,
+    }));
+    setCustomerSearchOpen(true);
+  };
+
+  const selectCustomer = (customer) => {
+    const pricing_type = customer?.has_membership || !!customer?.membership_card_no ? "membership" : "general";
+    setForm(prev => ({
+      ...prev,
+      customer_id: customer.id,
+      customer_phone: customer.phone || prev.customer_phone,
+      pricing_type,
+    }));
+    setCustomerSearchOpen(false);
   };
 
   const saveCustomerFromBilling = async () => {
@@ -1451,7 +1743,7 @@ const [membershipErr, setMembershipErr] = useState("");
       return;
     }
     if (data?.id) {
-      setForm(prev => ({ ...prev, customer_id: data.id, pricing_type: data.has_membership ? "membership" : "general" }));
+      setForm(prev => ({ ...prev, customer_id: data.id, customer_phone: data.phone || prev.customer_phone, pricing_type: data.has_membership ? "membership" : "general" }));
     }
     await reload();
     setCustomerModal(false);
@@ -1998,17 +2290,51 @@ const save = async () => {
   // ── shared form body (used by both add & edit modals) ───────────────────────
   const renderBillForm = () => (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Customer">
-          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
-            <select style={IS} value={form.customer_id} onChange={e => updateCustomer(e.target.value)}>
-              <option value="">- select -</option>
-              {customers.map(c => <option key={c.id} value={c.id}>{c.name}{c.has_membership ? " (Member)" : ""}</option>)}
-            </select>
-            <Btn small ghost onClick={openCustomerModal}><Icon d={I.add} size={13} /> Add</Btn>
+      <Field label="Customer">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, position: "relative" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, position: "relative" }}>
+            <div style={{ position: "relative" }}>
+              <input
+                style={IS}
+                type="tel"
+                placeholder="Search phone or name"
+                value={form.customer_phone}
+                onChange={e => updateCustomerByPhone(e.target.value)}
+                onFocus={() => setCustomerSearchOpen(true)}
+                onBlur={() => setTimeout(() => setCustomerSearchOpen(false), 120)}
+              />
+              {customerSearchOpen && customerPhoneResults.length > 0 && (
+                <div style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 6px)", zIndex: 90, background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 18px 40px rgba(0,0,0,.12)", maxHeight: 280, overflowY: "auto" }}>
+                  {customerPhoneResults.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onMouseDown={() => selectCustomer(c)}
+                      style={{ width: "100%", textAlign: "left", padding: "10px 12px", border: "none", background: "none", cursor: "pointer", color: "var(--text)", display: "flex", justifyContent: "space-between", gap: 12 }}
+                    >
+                      <span>{normalizePhone(c.phone)} - {c.name}</span>
+                      {c.has_membership || c.membership_card_no ? <span style={{ color: "#f59e0b" }}>Member</span> : null}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <input
+              style={{ ...IS, background: "var(--bg)", color: "var(--text)" }}
+              type="text"
+              placeholder="Customer name"
+              value={matchedCustomer?.name || ""}
+              readOnly
+            />
           </div>
-        </Field>
-      </div>
+          <Btn small ghost onClick={openCustomerModal}><Icon d={I.add} size={13} /> Add</Btn>
+        </div>
+        {form.customer_phone && !matchedCustomer && customerPhoneResults.length === 0 && (
+          <div style={{ marginTop: 6, color: "var(--muted)", fontSize: ".82rem" }}>
+            No customer found. Add a new customer or adjust the phone number.
+          </div>
+        )}
+      </Field>
 
       <Field label="Price Type">
         <select style={IS} value={form.pricing_type} disabled>
@@ -2218,7 +2544,7 @@ const save = async () => {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: ".85rem" }}>
           <thead>
             <tr style={{ background: "var(--bg)" }}>
-              {["InvoiceID", "Date", "Customer", "Desc", "Gross", "Discount", "Referral", "View"].map(h => (
+              {["InvoiceID", "Date", "Customer", "Desc", "Gross", "Discount", "Referral", "Actions"].map(h => (
                 <th key={h} style={{ textAlign: h === "Gross" || h === "Discount" ? "right" : "left", padding: "11px 14px", color: "var(--muted)", fontWeight: 600, fontSize: ".75rem", textTransform: "uppercase", letterSpacing: ".05em", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>{h}</th>
               ))}
             </tr>
@@ -2243,7 +2569,17 @@ const save = async () => {
                   <td style={{ padding: "12px 14px", color: "var(--muted)", textAlign: "right" }}>{money(b.total_amount || 0)}</td>
                   <td style={{ padding: "12px 14px", color: "var(--muted)", textAlign: "right" }}>{money(Number(b.discount_amount || 0))}</td>
                   <td style={{ padding: "12px 14px", color: "var(--muted)" }}>{b.referral || "-"}</td>
-                  <td style={{ padding: "12px 14px" }}>
+                  <td style={{ padding: "12px 14px", display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
+                    {isAdmin && (
+                      <>
+                        <button title="Edit bill" onClick={() => openEdit(b)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--muted)", display: "flex" }}>
+                          <Icon d={I.edit} size={13} />
+                        </button>
+                        <button title="Delete bill" onClick={() => setConfirmId(b.id)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "#e53e3e", display: "flex" }}>
+                          <Icon d={I.del} size={13} />
+                        </button>
+                      </>
+                    )}
                     <button title="View bill" onClick={() => setViewBill(b)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", color: "var(--muted)", display: "flex" }}>
                       <Icon d={I.eye} size={13} />
                     </button>
@@ -2330,7 +2666,6 @@ const save = async () => {
               <select style={IS} value={customerForm.gender} onChange={e => setCustomerForm({ ...customerForm, gender: e.target.value })}>
                 <option value="female">Female</option>
                 <option value="male">Male</option>
-                <option value="other">Other</option>
               </select>
             </Field>
             <Field label="Last Visit">
@@ -2503,20 +2838,14 @@ export default function App() {
   const userRole = profile?.role || "Staff";
   const todayCount = bills.filter(b => b.bill_date === today()).length;
 
-  // Nav items — owner gets dashboard, staff sees only operational screens
+  // Nav items — owner and staff both get a dashboard tab
   const nav = [
-    ...(isAdmin ? [{ id: "dashboard", label: "Owner Dashboard", icon: I.dash }] : []),
+    { id: "dashboard", label: isAdmin ? "Owner Dashboard" : "Staff Dashboard", icon: I.dash },
     { id: "billing",      label: "Billing",       icon: I.bill },
     { id: "employees",    label: "Employees",     icon: I.emp  },
     { id: "customers",    label: "Customers",     icon: I.cust },
     { id: "services",     label: "Services",      icon: I.serv },
   ];
-
-  useEffect(() => {
-    if (!isAdmin && tab === "dashboard") {
-      setTab("billing");
-    }
-  }, [isAdmin, tab]);
 
   if (session === undefined) {
     return (<>{typeof CSS === "string" ? <style>{CSS}</style> : null}<Loading msg="Initialising…" /></>);
@@ -2603,10 +2932,13 @@ export default function App() {
           </header>
 
           <main style={{ flex: 1, overflowY: "auto", padding: "1.5rem" }}>
-            {tab === "dashboard" && isAdmin && (
-              <OwnerDashboard employees={employees} customers={customers} services={services} bills={bills} />
+            {tab === "dashboard" && (
+              isAdmin
+                ? <OwnerDashboard employees={employees} customers={customers} services={services} bills={bills} />
+                : <StaffDashboard employees={employees} customers={customers} services={services} bills={bills} />
             )}
             {tab === "billing"      && <Billing      bills={bills} reload={loadData} employees={employees} customers={customers} services={services} isAdmin={isAdmin} setTab={setTab} />}
+
             {tab === "employees"    && <Employees    employees={employees}    reload={loadData} isAdmin={isAdmin} />}
             {tab === "customers"    && <Customers    customers={customers}    bills={bills} reload={loadData} isAdmin={isAdmin} />}
             {tab === "services"     && <Services     services={services}      reload={loadData} isAdmin={isAdmin} />}
