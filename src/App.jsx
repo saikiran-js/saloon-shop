@@ -718,7 +718,7 @@ function OwnerDashboard({ employees, customers, services, bills }) {
                 color: "var(--accent)"
               }}
             >
-              {fmt(emp.revenue)}
+              {fmt(emp.revenue)} of {fmt(emp.target)}
             </div>
 
             <div
@@ -959,7 +959,7 @@ function StaffDashboard({ employees, customers, services, bills }) {
                     <div style={{ fontSize: ".75rem", color: "var(--muted)" }}>{emp.completed} completed services</div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontWeight: 800, color: "var(--accent)" }}>{fmt(emp.revenue)}</div>
+                    <div style={{ fontWeight: 800}}><span style={{ color: "var(--accent)" }}>{fmt(emp.revenue)}</span> of <span>{fmt(emp.target)}</span></div>
                     <div style={{ fontSize: ".7rem", color: "var(--muted)" }}>{Math.min(emp.pct, 100).toFixed(0)}%</div>
                   </div>
                 </div>
