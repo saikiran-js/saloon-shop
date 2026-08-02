@@ -322,6 +322,49 @@ function ForgotPage({ onBack }) {
 // ─────────────────────────────────────────────────────────────
 // OWNER DASHBOARD — Staff, Customers, Calendar + Performance
 // ─────────────────────────────────────────────────────────────
+
+const getBillLineItems = (bill) => {
+  if (Array.isArray(bill.line_items) && bill.line_items.length) {
+    const items = bill.line_items.map(item => ({
+      ...item,
+      amount: Number(item.amount ?? item.rate ?? 0),
+      rate: Number(item.rate ?? item.amount ?? 0),
+    }));
+    const lineTotal = items.reduce((sum, item) => sum + Number(item.amount || item.rate || 0), 0);
+    const billTotal = Number(bill.total_amount ?? 0);
+    const taxableBill = billTotal > 0 ? +(billTotal / 1.05).toFixed(2) : lineTotal;
+    if (billTotal > 0 && lineTotal > 0) {
+      return items.map(item => ({
+        ...item,
+        billedAmount: (Number(item.amount || item.rate || 0) / lineTotal) * billTotal,
+        taxableAmount: (Number(item.amount || item.rate || 0) / lineTotal) * taxableBill,
+      }));
+    }
+    return items.map(item => ({
+      ...item,
+      taxableAmount: Number(item.amount || item.rate || 0),
+    }));
+  }
+  const fallbackAmount = Number(bill.subtotal ?? bill.service_price ?? bill.total_amount ?? 0);
+  const billTotal = Number(bill.total_amount ?? 0);
+  const taxableAmount = billTotal > 0 ? +(billTotal / 1.05).toFixed(2) : fallbackAmount;
+  return [{
+    qty:          bill.qty ?? 1,
+    rate:         fallbackAmount,
+    amount:       fallbackAmount,
+    billedAmount: Number(bill.total_amount ?? fallbackAmount),
+    taxableAmount,
+    discount:     bill.discount_amount ?? bill.manual_discount ?? 0,
+    staff_ids:    bill.staff_ids || (bill.employee_id ? [bill.employee_id] : []),
+    service_id:   bill.service_id,
+    employee_id:  bill.employee_id,
+    staff_names:  bill.staff_names || (bill.employee_name ? [bill.employee_name] : []),
+    service_name: bill.service_name,
+    employee_name: bill.employee_name,
+    general_price: bill.service_price ?? bill.subtotal ?? bill.total_amount ?? 0,
+  }];
+};
+
 function OwnerDashboard({ employees, customers, services, bills }) {
   const [selectedRange, setSelectedRange] = useState({ start: today(), end: today() });
   const [calMonth, setCalMonth] = useState(() => {
@@ -380,47 +423,7 @@ function OwnerDashboard({ employees, customers, services, bills }) {
   const birthdayCustomers = customers.filter(c => c.dob && selectedMonthDays.has(c.dob.slice(5)));
   const birthdayCount = birthdayCustomers.length;
 
-  const getBillLineItems = (bill) => {
-    if (Array.isArray(bill.line_items) && bill.line_items.length) {
-      const items = bill.line_items.map(item => ({
-        ...item,
-        amount: Number(item.amount ?? item.rate ?? 0),
-        rate: Number(item.rate ?? item.amount ?? 0),
-      }));
-      const lineTotal = items.reduce((sum, item) => sum + Number(item.amount || item.rate || 0), 0);
-      const billTotal = Number(bill.total_amount ?? 0);
-      const taxableBill = billTotal > 0 ? +(billTotal / 1.05).toFixed(2) : lineTotal;
-      if (billTotal > 0 && lineTotal > 0) {
-        return items.map(item => ({
-          ...item,
-          billedAmount: (Number(item.amount || item.rate || 0) / lineTotal) * billTotal,
-          taxableAmount: (Number(item.amount || item.rate || 0) / lineTotal) * taxableBill,
-        }));
-      }
-      return items.map(item => ({
-        ...item,
-        taxableAmount: Number(item.amount || item.rate || 0),
-      }));
-    }
-    const fallbackAmount = Number(bill.subtotal ?? bill.service_price ?? bill.total_amount ?? 0);
-    const billTotal = Number(bill.total_amount ?? 0);
-    const taxableAmount = billTotal > 0 ? +(billTotal / 1.05).toFixed(2) : fallbackAmount;
-    return [{
-      qty:          bill.qty ?? 1,
-      rate:         fallbackAmount,
-      amount:       fallbackAmount,
-      billedAmount: Number(bill.total_amount ?? fallbackAmount),
-      taxableAmount,
-      discount:     bill.discount_amount ?? bill.manual_discount ?? 0,
-      staff_ids:    bill.staff_ids || (bill.employee_id ? [bill.employee_id] : []),
-      service_id:   bill.service_id,
-      employee_id:  bill.employee_id,
-      staff_names:  bill.staff_names || (bill.employee_name ? [bill.employee_name] : []),
-      service_name: bill.service_name,
-      employee_name: bill.employee_name,
-      general_price: bill.service_price ?? bill.subtotal ?? bill.total_amount ?? 0,
-    }];
-  };
+  
 
   const dayBills = bills.filter(b => b.bill_date >= selectedStart && b.bill_date <= selectedEnd);
   const dayCash = dayBills
@@ -810,8 +813,8 @@ function StaffDashboard({ employees, customers, services, bills }) {
   const staffPerformance = employees
     .filter(e => e.status === "active" && String(e.role || "").trim().toLowerCase() !== "manager")
     .map(emp => {
-      const empItems = dayBills.filter(b => b.employee_id === emp.id);
-      const billRevenue = empItems.reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+      const empItems = dayBills.flatMap(b => getBillLineItems(b).filter(item => item.employee_id === emp.id));
+      const billRevenue = empItems.reduce((sum, item) => sum + Number(item.taxableAmount ?? item.amount ?? item.rate ?? 0), 0);
       const salary = Number(emp.salary || 0);
       const target = Number(emp.target_amount || 0);
       const pct = target > 0 ? Math.min((billRevenue / target) * 100, 150) : 0;
@@ -836,8 +839,8 @@ function StaffDashboard({ employees, customers, services, bills }) {
   const monthStaffPerformance = employees
     .filter(e => e.status === "active" && String(e.role || "").trim().toLowerCase() !== "manager")
     .map(emp => {
-      const empItems = monthBills.filter(b => b.employee_id === emp.id);
-      const billRevenue = empItems.reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+      const empItems = monthBills.flatMap(b => getBillLineItems(b).filter(item => item.employee_id === emp.id));
+      const billRevenue = empItems.reduce((sum, item) => sum + Number(item.taxableAmount ?? item.amount ?? item.rate ?? 0), 0);
       const target = Number(emp.target_amount || 0);
       return {
         ...emp,
