@@ -8,6 +8,97 @@ import autoTable from "jspdf-autotable";
 // ─────────────────────────────────────────────────────────────
 const fmt   = (n) => `₹${Number(n).toLocaleString("en-IN")}`;
 const today = ()  => new Date().toISOString().slice(0, 10);
+const PAYMENT_MODES = ["Cash", "UPI", "Card"];
+
+const parsePaymentBreakdown = (rawValue, fallbackTotal = 0) => {
+  const totals = { Cash: 0, UPI: 0, Card: 0 };
+  const value = rawValue == null ? "" : String(rawValue).trim();
+
+  const normalizeMode = (mode) => {
+    const key = String(mode || "").trim().toLowerCase();
+    if (key === "cash") return "Cash";
+    if (key === "upi") return "UPI";
+    if (key === "card") return "Card";
+    return "Cash";
+  };
+
+  if (!value) {
+    return { ...totals, Cash: Number(fallbackTotal || 0) };
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === "object") {
+      for (const mode of PAYMENT_MODES) {
+        const key = mode.toLowerCase();
+        const amount = Number(parsed[mode] ?? parsed[key] ?? parsed[mode.toUpperCase()] ?? 0);
+        totals[mode] = Number.isFinite(amount) ? Math.max(amount, 0) : 0;
+      }
+      if (Object.values(totals).some(v => v > 0)) return totals;
+    }
+  } catch (err) {
+    // ignore JSON parsing errors and continue with text parsing
+  }
+
+  const matches = [...value.matchAll(/(Cash|UPI|Card)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)/gi)];
+  if (matches.length) {
+    for (const match of matches) {
+      const mode = normalizeMode(match[1]);
+      const amount = Number(match[2]);
+      if (Number.isFinite(amount)) totals[mode] += Math.max(amount, 0);
+    }
+    if (Object.values(totals).some(v => v > 0)) return totals;
+  }
+
+  const legacyMode = value.match(/^(Cash|UPI|Card)$/i);
+  if (legacyMode) {
+    totals[normalizeMode(legacyMode[1])] = Number(fallbackTotal || 0);
+    return totals;
+  }
+
+  const splitParts = value.split(/[|,&/]+/).map(part => part.trim()).filter(Boolean);
+  for (const part of splitParts) {
+    const match = part.match(/^(Cash|UPI|Card)\s*[:=]?\s*(.*)$/i);
+    if (!match) continue;
+    const mode = normalizeMode(match[1]);
+    const amount = Number(String(match[2]).replace(/[^0-9.]/g, ""));
+    if (Number.isFinite(amount)) totals[mode] += Math.max(amount, 0);
+  }
+
+  if (Object.values(totals).some(v => v > 0)) return totals;
+  const single = value.match(/^(Cash|UPI|Card)/i);
+  if (single) {
+    totals[normalizeMode(single[1])] = Number(fallbackTotal || 0);
+  }
+
+  return totals;
+};
+
+const encodePaymentBreakdown = (breakdown, fallbackTotal = 0) => {
+  const normalized = { Cash: 0, UPI: 0, Card: 0, ...breakdown };
+  const entries = PAYMENT_MODES.map(mode => [mode, Number(normalized[mode] || 0)])
+    .filter(([, amount]) => amount > 0);
+
+  if (!entries.length) {
+    return fallbackTotal > 0 ? "Cash" : "Cash";
+  }
+
+  if (entries.length === 1) {
+    return entries[0][0];
+  }
+
+  return entries.map(([mode, amount]) => `${mode}:${Number(amount).toFixed(2)}`).join("|");
+};
+
+const describePaymentMode = (rawValue, fallbackTotal = 0) => {
+  const breakdown = parsePaymentBreakdown(rawValue, fallbackTotal);
+  const entries = PAYMENT_MODES.map(mode => [mode, breakdown[mode]])
+    .filter(([, amount]) => amount > 0);
+
+  if (!entries.length) return "Cash";
+  if (entries.length === 1) return entries[0][0];
+  return entries.map(([mode, amount]) => `${mode}: ${fmt(amount)}`).join(" | ");
+};
 
 const STATUS_COLORS = {
   confirmed: { bg: "rgba(96,165,250,.15)",  text: "#60a5fa" },
@@ -426,12 +517,8 @@ function OwnerDashboard({ employees, customers, services, bills }) {
   
 
   const dayBills = bills.filter(b => b.bill_date >= selectedStart && b.bill_date <= selectedEnd);
-  const dayCash = dayBills
-    .filter(b => String(b.payment_mode || "").toLowerCase().includes("cash"))
-    .reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
-  const dayUpi = dayBills
-    .filter(b => String(b.payment_mode || "").toLowerCase().includes("upi"))
-    .reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+  const dayCash = dayBills.reduce((sum, b) => sum + parsePaymentBreakdown(b.payment_mode, Number(b.total_amount || 0)).Cash, 0);
+  const dayUpi = dayBills.reduce((sum, b) => sum + parsePaymentBreakdown(b.payment_mode, Number(b.total_amount || 0)).UPI, 0);
   const dayDiscount = dayBills
     .reduce((sum, b) => sum + Number(b.discount_amount ?? b.manual_discount ?? 0), 0);
 
@@ -1561,7 +1648,7 @@ const [membershipErr, setMembershipErr] = useState("");
 
   const blankForm = {
     customer_id: "", customer_phone: "", employee_id: "", bill_date: today(), bill_time: "10:00",
-    pricing_type: "general", manual_discount: 0, payment_mode: "Cash", notes: "",
+    pricing_type: "general", manual_discount: 0, payment_mode: "Cash", payment_breakdown: { Cash: "", UPI: "", Card: "" }, notes: "",
   };
   const blankCustomer = {
     name: "", gender: "other", phone: "", email: "", last_visit: today(),
@@ -1678,6 +1765,7 @@ const [membershipErr, setMembershipErr] = useState("");
       pricing_type:    bill.pricing_type   || "general",
       manual_discount: bill.manual_discount ?? 0,
       payment_mode:    bill.payment_mode   || "Cash",
+      payment_breakdown: parsePaymentBreakdown(bill.payment_mode, Number(bill.total_amount || 0)),
       notes:           bill.notes          || "",
     });
     setItems(lineItems);
@@ -1767,6 +1855,9 @@ const [membershipErr, setMembershipErr] = useState("");
     const customer = customers.find(c => c.id === form.customer_id);
     if (!customer) return null;
 
+    const paymentBreakdown = { Cash: Number(form.payment_breakdown?.Cash || 0), UPI: Number(form.payment_breakdown?.UPI || 0), Card: Number(form.payment_breakdown?.Card || 0) };
+    const paymentMode = encodePaymentBreakdown(paymentBreakdown, total);
+
     const rows = selectedItems.map(item => {
       const service = services.find(s => s.id === item.service_id);
       if (!service) return null;
@@ -1816,7 +1907,7 @@ const [membershipErr, setMembershipErr] = useState("");
       line_items:       rows,
       bill_date:        form.bill_date,
       bill_time:        form.bill_time,
-      payment_mode:     form.payment_mode,
+      payment_mode:     paymentMode,
       notes:            form.notes,
     };
   };
@@ -2008,9 +2099,9 @@ const save = async () => {
   const selectedGst = selectedBills.reduce((sum, b) => sum + Number(b.gst_amount || 0), 0);
   const selectedNet = selectedTotal - selectedGst;
   const selectedAdvance = selectedBills.reduce((sum, b) => sum + Number(b.advance_amount || b.advance || 0), 0);
-  const selectedCash = selectedBills.filter(b => String(b.payment_mode || "").toLowerCase() === "cash").reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
-  const selectedUpi = selectedBills.filter(b => String(b.payment_mode || "").toLowerCase() === "upi").reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
-  const selectedCard = selectedBills.filter(b => String(b.payment_mode || "").toLowerCase() === "card").reduce((sum, b) => sum + Number(b.total_amount || 0), 0);
+  const selectedCash = selectedBills.reduce((sum, b) => sum + parsePaymentBreakdown(b.payment_mode, Number(b.total_amount || 0)).Cash, 0);
+  const selectedUpi = selectedBills.reduce((sum, b) => sum + parsePaymentBreakdown(b.payment_mode, Number(b.total_amount || 0)).UPI, 0);
+  const selectedCard = selectedBills.reduce((sum, b) => sum + parsePaymentBreakdown(b.payment_mode, Number(b.total_amount || 0)).Card, 0);
   const monthStr = `${calMonth.year}-${String(calMonth.month + 1).padStart(2, "0")}`;
   const monthTotal = bills
     .filter(b => String(b.bill_date || "").startsWith(monthStr))
@@ -2057,8 +2148,10 @@ const save = async () => {
       serviceCategories[category].discount += discount;
       serviceCategories[category].net += net;
 
-      const paymentMode = String(b.payment_mode || "Cash");
-      if (paymentMode in paymentSummary) paymentSummary[paymentMode] += net;
+      const paymentBreakdown = parsePaymentBreakdown(b.payment_mode, Number(b.total_amount || 0));
+      for (const mode of PAYMENT_MODES) {
+        paymentSummary[mode] += paymentBreakdown[mode];
+      }
       invoiceNumbers.push(b.invoice_no ? String(b.invoice_no).padStart(5, "0") : billNo(b));
     });
 
@@ -2280,7 +2373,7 @@ const save = async () => {
 
         {/* Payment & GST summary */}
         <div style={{ marginTop: 12, borderTop: `1px solid ${line}`, paddingTop: 8, fontSize: printMode ? 9 : ".72rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}><b>Payment Mode</b><span>{bill.payment_mode || "Cash"}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}><b>Payment Mode</b><span>{describePaymentMode(bill.payment_mode, Number(bill.total_amount || 0))}</span></div>
           <div style={{ marginTop: 8, fontWeight: 800 }}>GST Tax Summary:</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", textAlign: "right", gap: 4, marginTop: 4 }}>
             <b style={{ textAlign: "left" }}>GST</b><b>CGST</b><b>SGST</b><b>Total</b>
@@ -2415,14 +2508,42 @@ const save = async () => {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Date"><input type="date" style={IS} value={form.bill_date} onChange={e => setForm({ ...form, bill_date: e.target.value })} onMouseEnter={e => e.target.showPicker?.()} /></Field>
         <Field label="Time"><input type="time" style={IS} value={form.bill_time} onChange={e => setForm({ ...form, bill_time: e.target.value })} /></Field>
-        <Field label="Payment">
-          <select style={IS} value={form.payment_mode} onChange={e => setForm({ ...form, payment_mode: e.target.value })}>
-            {["Cash", "UPI", "Card"].map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-        </Field>
+      </div>
+
+      <div style={{ marginBottom: "1rem" }}>
+        <label style={{ display: "block", fontSize: ".78rem", fontWeight: 600, color: "var(--muted)", marginBottom: 8, textTransform: "uppercase", letterSpacing: ".06em" }}>Payment Split</label>
+        <div style={{ display: "grid", gap: 8 }}>
+          {PAYMENT_MODES.map(mode => (
+            <div key={mode} style={{ display: "grid", gridTemplateColumns: "110px 1fr", gap: 8, alignItems: "center" }}>
+              <div style={{ fontWeight: 600, color: "var(--text)" }}>{mode}</div>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder={`Amount in ${mode}`}
+                style={IS}
+                value={form.payment_breakdown?.[mode] ?? ""}
+                onChange={e => {
+                  const value = e.target.value;
+                  setForm({
+                    ...form,
+                    payment_mode: mode,
+                    payment_breakdown: {
+                      ...form.payment_breakdown,
+                      [mode]: value,
+                    },
+                  });
+                }}
+              />
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 8, color: "var(--muted)", fontSize: ".78rem" }}>
+          Total entered: {money(Object.values(form.payment_breakdown || {}).reduce((sum, v) => sum + (Number(v) || 0), 0))} / {money(total)}
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
